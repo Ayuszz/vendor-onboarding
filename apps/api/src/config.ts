@@ -76,6 +76,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error('AUTH_MODE=dev is not allowed in production');
   if (cfg.NODE_ENV === 'production' && cfg.DEV_SHOW_OTP)
     throw new Error('DEV_SHOW_OTP must be false in production: sign-in codes may only be delivered by email');
+  if (cfg.DEV_SHOW_OTP && !['127.0.0.1', 'localhost', '::1'].includes(cfg.HOST))
+    throw new Error('DEV_SHOW_OTP only works when HOST is 127.0.0.1 or localhost; a hosted server must email the code');
   if (cfg.NODE_ENV === 'production' && cfg.MAILER !== 'smtp')
     throw new Error('MAILER=smtp is required in production so vendors receive their sign-in codes');
   if (cfg.MAILER === 'smtp' && (!cfg.SMTP_HOST || !cfg.MAIL_FROM))
