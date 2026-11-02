@@ -31,6 +31,18 @@ const EVENT_LABELS: Record<EventDTO['action'], string> = {
   document_failed: 'Document failed checks',
 };
 
+/** Plain-language status for vendors looking at their own application. */
+const VENDOR_STATUS: Record<string, string> = {
+  DRAFT: 'Your application is not submitted yet. Finish your details and documents, then submit it for review.',
+  SENT_BACK: 'Our team asked for a few changes. Update the details below and submit again.',
+  IN_REVIEW: 'Thanks, we have your application. Our quality and supply-chain teams are reviewing it now.',
+  FINANCE_REVIEW: 'Quality and supply-chain checks are done. Finance is giving the final approval.',
+  SAP_PENDING: 'Approved. We are setting you up in our purchasing system.',
+  SAP_ERROR: 'Approved. Setting you up in our purchasing system is taking a little longer than usual; our team is on it.',
+  ONBOARDED: 'You are a registered vendor. Your vendor code is shown above.',
+  REJECTED: 'We are unable to onboard your company at this time.',
+};
+
 const SUCCESS_TOAST: Record<UserAction, string> = {
   submit: 'Submitted for approval',
   approve: 'Approved',
@@ -50,7 +62,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 export default function VendorDetail() {
   const { id } = useParams() as { id: string };
-  const { user } = useAuth();
+  const { user, isVendor } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
@@ -110,9 +122,11 @@ export default function VendorDetail() {
     <div className={clsx('space-y-5', hasDock && 'pb-24')}>
       <Panel className="p-5 sm:p-7">
         <div className="flex items-start gap-3">
-          <Button variant="ghost" size="sm" className="-ml-2 !px-2" aria-label="Back" onClick={() => navigate(-1)}>
-            <ChevronLeft className="size-5" />
-          </Button>
+          {!isVendor && (
+            <Button variant="ghost" size="sm" className="-ml-2 !px-2" aria-label="Back" onClick={() => navigate(-1)}>
+              <ChevronLeft className="size-5" />
+            </Button>
+          )}
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.025em] sm:text-[32px]">{p.legalName || 'Untitled vendor'}</h1>
@@ -129,9 +143,19 @@ export default function VendorDetail() {
             </Button>
           )}
         </div>
+        {isVendor && <p className="mt-4 max-w-[60ch] text-[15px] text-ink-2">{VENDOR_STATUS[v.state]}</p>}
         <div className="mt-7">
           <Journey state={v.state} approvals={v.approvals} />
         </div>
+        {v.state === 'SENT_BACK' && (
+          <div className="mt-6 flex gap-3 rounded-(--radius-control) bg-warn-soft p-3.5 text-[14px] text-warn">
+            <AlertTriangle className="size-5 shrink-0" />
+            <div>
+              <p className="font-semibold">Changes requested</p>
+              <p className="mt-0.5 text-ink">{events.data?.filter((e) => e.action === 'send_back').at(-1)?.reason ?? '…'}</p>
+            </div>
+          </div>
+        )}
 
         {v.state === 'SAP_ERROR' && v.sap?.lastError && (
           <div className="mt-6 flex gap-3 rounded-(--radius-control) bg-bad-soft p-3.5 text-[14px] text-bad">
@@ -149,7 +173,7 @@ export default function VendorDetail() {
         )}
       </Panel>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className={clsx('grid gap-5', !isVendor && 'xl:grid-cols-[minmax(0,1fr)_360px]')}>
         <div className="min-w-0 space-y-5">
           <Panel>
             <PanelHeader title="Vendor details" />
@@ -194,7 +218,7 @@ export default function VendorDetail() {
           </Panel>
         </div>
 
-        <Panel as="aside" className="self-start xl:sticky xl:top-5">
+        <Panel as="aside" className={clsx('self-start', !isVendor && 'xl:sticky xl:top-5')}>
           <PanelHeader title="Activity" />
           <ol className="relative px-5 pb-5 sm:px-6">
             {events.isPending && <Skeleton className="h-40" />}
@@ -229,7 +253,7 @@ export default function VendorDetail() {
 
       {/* Action dock — floating glass bar with exactly the actions this person may take now. */}
       {hasDock && (
-        <div className="fixed inset-x-0 bottom-20 z-30 flex justify-center px-3 lg:bottom-6 lg:pl-[268px]">
+        <div className={clsx('fixed inset-x-0 z-30 flex justify-center px-3', isVendor ? 'bottom-6' : 'bottom-20 lg:bottom-6 lg:pl-[268px]')}>
           <div className="glass-strong animate-rise flex max-w-full items-center gap-2 overflow-x-auto rounded-full p-2 pl-5">
             <span className="hidden text-[13px] whitespace-nowrap text-ink-2 sm:inline">
               {actingAs ? `Reviewing as ${ROLE_LABELS[actingAs]}` : v.state === 'SAP_ERROR' ? 'SAP sync failed' : STATE_META[v.state].label}
@@ -256,7 +280,7 @@ export default function VendorDetail() {
             )}
             {editable && can('submit') && (
               <Button variant="primary" onClick={() => navigate(`/vendors/${id}/edit?step=${v.blockers.length ? 3 : 4}`)}>
-                {v.blockers.length ? 'Continue editing' : 'Review and submit'}
+                {v.state === 'SENT_BACK' ? 'Make changes' : v.blockers.length ? (isVendor ? 'Continue application' : 'Continue editing') : 'Review and submit'}
               </Button>
             )}
           </div>

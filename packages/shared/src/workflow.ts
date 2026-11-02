@@ -37,11 +37,12 @@ export const STATE_META: Record<State, { label: string; tone: Tone; terminal?: b
 };
 export type Tone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 
-export const ROLES = ['REQUESTER', 'QC', 'SCM', 'FINANCE', 'ADMIN'] as const;
+export const ROLES = ['VENDOR', 'REQUESTER', 'QC', 'SCM', 'FINANCE', 'ADMIN'] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABELS: Record<Role, string> = {
-  REQUESTER: 'Requester',
+  VENDOR: 'Vendor',
+  REQUESTER: 'Buyer',
   QC: 'Quality (QC)',
   SCM: 'Supply Chain (SCM)',
   FINANCE: 'Finance',
@@ -122,14 +123,14 @@ export function decide(
     case 'submit': {
       if (state !== 'DRAFT' && state !== 'SENT_BACK')
         return deny('INVALID_TRANSITION', `Cannot submit from ${state}`);
-      if (!has('REQUESTER', 'ADMIN')) return deny('FORBIDDEN', 'Only the requester can submit');
+      if (!has('VENDOR', 'REQUESTER', 'ADMIN')) return deny('FORBIDDEN', 'Only the vendor or requester can submit');
       if (ctx.submissionBlockers.length)
         return deny('GUARD_FAILED', `Not ready to submit: ${ctx.submissionBlockers.join('; ')}`);
       return {
         ok: true,
         to: 'IN_REVIEW',
         effects: [{ type: 'clear_approvals' }],
-        actingRole: has('REQUESTER') ? 'REQUESTER' : 'ADMIN',
+        actingRole: has('VENDOR') ? 'VENDOR' : has('REQUESTER') ? 'REQUESTER' : 'ADMIN',
       };
     }
 
@@ -201,7 +202,7 @@ export function pendingWith(snapshot: WorkflowSnapshot): Role[] {
   switch (snapshot.state) {
     case 'DRAFT':
     case 'SENT_BACK':
-      return ['REQUESTER'];
+      return ['VENDOR'];
     case 'IN_REVIEW': {
       const done = new Set(snapshot.approvals.map((a) => a.role));
       return PARALLEL_REVIEWERS.filter((r) => !done.has(r));

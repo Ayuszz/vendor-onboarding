@@ -1,12 +1,18 @@
-import type { UserDTO } from '@vo/shared';
+import type { SessionDTO, UserDTO } from '@vo/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, tokenStore } from './api';
 
 interface AuthState {
   user: UserDTO | null;
+  /** Vendor accounts only: their application, or null if they haven't started one. */
+  vendorId: string | null;
+  isVendor: boolean;
   loading: boolean;
-  login: (userId: string) => Promise<void>;
+  /** Stores the token from a successful sign-in. */
+  signIn: (s: SessionDTO) => void;
+  /** Re-reads the session (e.g. after a vendor creates their application). */
+  refresh: () => Promise<void>;
   logout: () => void;
 }
 
@@ -28,21 +34,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('vo:logout', logout);
   }, [logout]);
 
-  const login = useCallback(
-    async (userId: string) => {
-      const { token, user } = await api.devLogin(userId);
-      tokenStore.set(token);
+  useEffect(() => {
+    if (me.isError) logout();
+  }, [me.isError, logout]);
+
+  const signIn = useCallback(
+    (s: SessionDTO) => {
+      if (!s.token) return;
+      tokenStore.set(s.token);
       qc.clear();
-      qc.setQueryData(['me'], user);
+      qc.setQueryData(['me'], { user: s.user, vendorId: s.vendorId });
       setHasToken(true);
     },
     [qc],
   );
 
-  const value = useMemo<AuthState>(
-    () => ({ user: hasToken ? (me.data ?? null) : null, loading: hasToken && me.isPending, login, logout }),
-    [hasToken, me.data, me.isPending, login, logout],
-  );
+  const refresh = useCallback(async () => {
+    await qc.invalidateQueries({ queryKey: ['me'] });
+  }, [qc]);
+
+  const value = useMemo<AuthState>(() => {
+    const user = hasToken ? (me.data?.user ?? null) : null;
+    return {
+      user,
+      vendorId: me.data?.vendorId ?? null,
+      isVendor: !!user?.roles.includes('VENDOR'),
+      loading: hasToken && me.isPending,
+      signIn,
+      refresh,
+      logout,
+    };
+  }, [hasToken, me.data, me.isPending, signIn, refresh, logout]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

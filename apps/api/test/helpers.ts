@@ -6,7 +6,8 @@ import { buildApp, type App } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { createDb, type Db } from '../src/db/client.js';
 import { migrate } from '../src/db/migrations.js';
-import { seed } from '../src/db/seed.js';
+import { DEMO_PASSWORD, seed } from '../src/db/seed.js';
+import { ConsoleMailer } from '../src/integrations/mailer.js';
 import { MockSapClient } from '../src/integrations/sap.js';
 import { localStorage } from '../src/storage.js';
 
@@ -14,6 +15,7 @@ export interface TestCtx {
   app: App;
   db: Db;
   sap: MockSapClient;
+  mailer: ConsoleMailer;
   tokens: Record<'requester' | 'qc' | 'scm' | 'finance' | 'admin', string>;
   close(): Promise<void>;
 }
@@ -31,24 +33,27 @@ export async function setup(): Promise<TestCtx> {
   await migrate(db);
   await seed(db);
   const sap = new MockSapClient();
-  const app = await buildApp({ cfg, db, storage: localStorage(uploadDir), sap, backoffBaseMs: 0 });
+  const mailer = new ConsoleMailer();
+  const app = await buildApp({ cfg, db, storage: localStorage(uploadDir), sap, mailer, backoffBaseMs: 0 });
   await app.ready();
 
-  const login = async (userId: string) => {
-    const r = await app.inject({ method: 'POST', url: '/api/auth/dev-login', payload: { userId } });
+  const login = async (email: string) => {
+    const r = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: DEMO_PASSWORD } });
+    if (r.statusCode !== 200) throw new Error(`login failed for ${email}: ${r.body}`);
     return (r.json() as { token: string }).token;
   };
   const tokens = {
-    requester: await login('u_requester'),
-    qc: await login('u_qc'),
-    scm: await login('u_scm'),
-    finance: await login('u_finance'),
-    admin: await login('u_admin'),
+    requester: await login('buyer@example.com'),
+    qc: await login('qc@example.com'),
+    scm: await login('scm@example.com'),
+    finance: await login('finance@example.com'),
+    admin: await login('admin@example.com'),
   };
   return {
     app,
     db,
     sap,
+    mailer,
     tokens,
     close: async () => {
       await app.close();

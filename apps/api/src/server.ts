@@ -3,6 +3,7 @@ import { loadConfig } from './config.js';
 import { createDb } from './db/client.js';
 import { migrate } from './db/migrations.js';
 import { seed } from './db/seed.js';
+import { ConsoleMailer } from './integrations/mailer.js';
 import { MockSapClient, ServiceLayerSapClient } from './integrations/sap.js';
 import { localStorage } from './storage.js';
 
@@ -21,7 +22,8 @@ const sap =
       })
     : new MockSapClient();
 
-const app = await buildApp({ cfg, db, storage: localStorage(cfg.UPLOAD_DIR), sap });
+const mailer = new ConsoleMailer((line) => console.log(line));
+const app = await buildApp({ cfg, db, storage: localStorage(cfg.UPLOAD_DIR), sap, mailer });
 
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, 'shutting down');

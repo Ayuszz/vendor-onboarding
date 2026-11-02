@@ -3,6 +3,7 @@ import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, MemoryRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
+import { VendorLayout } from './components/VendorLayout';
 import { Skeleton, ToastProvider } from './components/ui';
 import { ApiError, IS_DEMO } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
@@ -35,10 +36,30 @@ function PageFallback() {
   );
 }
 
+/** Vendors land on their application, or straight into registration if they have none. */
+function VendorHome() {
+  const { vendorId } = useAuth();
+  return <Navigate to={vendorId ? `/vendors/${vendorId}` : '/vendors/new'} replace />;
+}
+
 function Gate() {
-  const { user, loading } = useAuth();
+  const { user, loading, isVendor } = useAuth();
   if (loading) return <div className="scene" aria-hidden><i /></div>;
   if (!user) return <Login />;
+  if (isVendor)
+    return (
+      <Suspense fallback={<PageFallback />}>
+        <Routes>
+          <Route element={<VendorLayout />}>
+            <Route index element={<VendorHome />} />
+            <Route path="vendors/new" element={<VendorEditor />} />
+            <Route path="vendors/:id" element={<VendorDetail />} />
+            <Route path="vendors/:id/edit" element={<VendorEditor />} />
+            <Route path="*" element={<VendorHome />} />
+          </Route>
+        </Routes>
+      </Suspense>
+    );
   return (
     <Suspense fallback={<PageFallback />}>
       <Routes>

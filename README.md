@@ -21,7 +21,11 @@ cp .env.example .env        # then set JWT_SECRET to any 32+ character string
 npm run dev                 # API on :4000, web on :5173
 ```
 
-Open <http://localhost:5173> and pick a demo user. There is one per role: Requester, QC, SCM, Finance and Admin. The database is an embedded Postgres (PGlite) stored in `.data/`, so nothing else needs installing. API docs are at <http://localhost:4000/docs>.
+Open <http://localhost:5173>. There is one sign-in page with two tabs:
+
+- **Vendor:** enter any email and you get a 6-digit code. In development no email is sent, so the code appears on screen and in the API log. A new email goes straight to company registration and document upload. If a vendor record with that contact email already exists in the database, it is linked to the account and the vendor sees its status.
+- **Employee:** sign in with `qc@example.com`, `scm@example.com`, `finance@example.com`, `buyer@example.com` or `admin@example.com`. The password for all of them is `Demo@1234`. These sample accounts are only created when `AUTH_MODE=dev`.
+ The database is an embedded Postgres (PGlite) stored in `.data/`, so nothing else needs installing. API docs are at <http://localhost:4000/docs>.
 
 ```bash
 npm test          # 40 tests: workflow engine, validators, full API flows
@@ -91,7 +95,7 @@ To call external providers (GSTN, NSDL, penny-drop), add them in `jobs/handlers.
 
 ## Going to production
 
-1. **Auth.** Set `AUTH_MODE=jwt`, issue tokens from your SSO with `sub`, `name`, `email` and `roles` claims, and replace the demo sign-in screen with an SSO redirect. `AUTH_MODE=dev` refuses to start when `NODE_ENV=production`.
+1. **Sign-in.** Implement the `Mailer` interface (`integrations/mailer.ts`) with SMTP, SES or Microsoft Graph so vendors receive their codes, and set `AUTH_MODE=jwt` so codes are never returned in API responses. Create staff accounts with hashed passwords (scrypt, see `services/auth.ts`), or put your company SSO in front of the Employee tab. `AUTH_MODE=dev` refuses to start when `NODE_ENV=production`.
 2. **Database.** Set `DATABASE_URL` to a managed Postgres. Migrations run on boot. You can also run them with `npm run db:migrate -w @vo/api`.
 3. **SAP.** Set `SAP_MODE=service_layer` and the `SAP_*` variables, then map `PayTermsGrpCode` and any custom user-defined fields in `integrations/sap.ts → toBusinessPartner`.
 4. **Files.** Implement `FileStorage` for S3 or Azure Blob. It needs three methods.

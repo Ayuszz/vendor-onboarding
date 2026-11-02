@@ -6,6 +6,9 @@ import {
   STATES,
   actionBodySchema,
   actionParamSchema,
+  otpRequestSchema,
+  otpVerifySchema,
+  staffLoginSchema,
   vendorDraftSchema,
   type UserDTO,
 } from '@vo/shared';
@@ -18,12 +21,13 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { bearer, signToken, verifyToken } from './auth.js';
+import { bearer, verifyToken } from './auth.js';
 import type { Config } from './config.js';
 import type { Db } from './db/client.js';
-import { DEMO_USERS } from './db/seed.js';
 import { AppError, badRequest, unauthorized } from './errors.js';
+import type { Mailer } from './integrations/mailer.js';
 import type { SapClient } from './integrations/sap.js';
+import * as auth from './services/auth.js';
 import { Worker } from './jobs/worker.js';
 import * as vendors from './services/vendors.js';
 import { sniffFileType, type FileStorage } from './storage.js';
@@ -39,6 +43,7 @@ export interface AppDeps {
   db: Db;
   storage: FileStorage;
   sap: SapClient;
+  mailer: Mailer;
   backoffBaseMs?: number;
 }
 
@@ -95,7 +100,7 @@ export async function buildApp(deps: AppDeps) {
   });
 
   // ── auth ──
-  const PUBLIC = new Set(['/api/health', '/api/auth/dev-login', '/api/auth/dev-users']);
+  const PUBLIC = new Set(['/api/health', '/api/auth/login', '/api/auth/code', '/api/auth/code/verify']);
   app.addHook('onRequest', async (req: FastifyRequest) => {
     const path = req.url.split('?')[0]!;
     if (!path.startsWith('/api/') || PUBLIC.has(path)) return;
@@ -109,22 +114,25 @@ export async function buildApp(deps: AppDeps) {
     return { ok: true };
   });
 
-  if (cfg.AUTH_MODE === 'dev') {
-    app.get('/api/auth/dev-users', { schema: { tags: ['auth'] } }, async () => DEMO_USERS);
-    app.post(
-      '/api/auth/dev-login',
-      { schema: { tags: ['auth'], body: z.object({ userId: z.string() }) } },
-      async (req) => {
-        const { rows } = await db.query<UserDTO>('SELECT id, name, email, roles FROM users WHERE id = $1', [
-          req.body.userId,
-        ]);
-        if (!rows[0]) throw unauthorized('Unknown user');
-        return { token: signToken(rows[0], cfg.JWT_SECRET, cfg.JWT_TTL_SECONDS), user: rows[0] };
-      },
-    );
-  }
+  // ── sign in ──
+  const authDeps = { db, cfg, mailer: deps.mailer };
+  const limit = auth.rateLimiter(cfg.NODE_ENV === 'test' ? 1000 : 20, 60_000);
+  const authTags = ['auth'];
 
-  app.get('/api/me', { schema: { tags: ['auth'] } }, async (req) => req.user);
+  app.post('/api/auth/login', { schema: { tags: authTags, body: staffLoginSchema } }, async (req) => {
+    limit(`login:${req.ip}`);
+    return auth.staffLogin(authDeps, req.body.email, req.body.password);
+  });
+  app.post('/api/auth/code', { schema: { tags: authTags, body: otpRequestSchema } }, async (req) => {
+    limit(`code:${req.ip}`);
+    return auth.requestCode(authDeps, req.body.email);
+  });
+  app.post('/api/auth/code/verify', { schema: { tags: authTags, body: otpVerifySchema } }, async (req) => {
+    limit(`verify:${req.ip}`);
+    return auth.verifyCode(authDeps, req.body.email, req.body.code);
+  });
+
+  app.get('/api/me', { schema: { tags: authTags } }, async (req) => auth.session(authDeps, req.user));
 
   // ── vendors ──
   const idParam = z.object({ id: z.string().uuid() });

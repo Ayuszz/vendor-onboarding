@@ -13,6 +13,26 @@ export interface UserDTO {
   roles: Role[];
 }
 
+/** Session returned by every sign-in route and by GET /me. */
+export interface SessionDTO {
+  token?: string;
+  user: UserDTO;
+  /** For vendor accounts: their vendor record, or null when they have not started onboarding. */
+  vendorId: string | null;
+}
+
+export const emailSchema = z.string().trim().toLowerCase().email('Enter a valid email address').max(200);
+export const staffLoginSchema = z.object({ email: emailSchema, password: z.string().min(1, 'Enter your password').max(200) });
+export const otpRequestSchema = z.object({ email: emailSchema });
+export const otpVerifySchema = z.object({ email: emailSchema, code: z.string().trim().regex(/^[0-9]{6}$/, 'Enter the 6-digit code') });
+
+export interface OtpRequestResult {
+  sent: true;
+  expiresInSeconds: number;
+  /** Only present in development/demo builds, where no email is actually sent. */
+  devCode?: string;
+}
+
 export interface DocumentDTO {
   key: DocumentKey;
   status: DocStatus;

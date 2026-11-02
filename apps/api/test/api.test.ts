@@ -21,7 +21,7 @@ describe('auth', () => {
 
   it('returns the current user', async () => {
     const r = await call('qc', 'GET', '/api/me');
-    expect(r.body).toMatchObject({ id: 'u_qc', roles: ['QC'] });
+    expect(r.body).toMatchObject({ user: { id: 'u_qc', roles: ['QC'] }, vendorId: null });
   });
 });
 

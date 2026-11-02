@@ -2,11 +2,12 @@ import type {
   ActionBody,
   DocumentKey,
   EventDTO,
+  OtpRequestResult,
+  SessionDTO,
   Paged,
   State,
   StatsDTO,
   UserAction,
-  UserDTO,
   VendorDTO,
   VendorDraft,
   VendorListItem,
@@ -78,10 +79,13 @@ const qs = (p: Record<string, unknown>) => {
 };
 
 const httpApi = {
-  devUsers: () => request<UserDTO[]>('/auth/dev-users'),
-  devLogin: (userId: string) =>
-    request<{ token: string; user: UserDTO }>('/auth/dev-login', { method: 'POST', body: JSON.stringify({ userId }) }),
-  me: () => request<UserDTO>('/me'),
+  staffLogin: (email: string, password: string) =>
+    request<SessionDTO>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  requestCode: (email: string) =>
+    request<OtpRequestResult>('/auth/code', { method: 'POST', body: JSON.stringify({ email }) }),
+  verifyCode: (email: string, code: string) =>
+    request<SessionDTO>('/auth/code/verify', { method: 'POST', body: JSON.stringify({ email, code }) }),
+  me: () => request<SessionDTO>('/me'),
   stats: () => request<StatsDTO>('/stats'),
   list: (p: ListParams) => request<Paged<VendorListItem>>(`/vendors${qs({ ...p })}`),
   get: (id: string) => request<VendorDTO>(`/vendors/${id}`),

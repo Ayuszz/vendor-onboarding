@@ -26,6 +26,11 @@ describe('submit', () => {
     expect(d).toMatchObject({ ok: false, code: 'GUARD_FAILED' });
   });
 
+  it('vendors can submit their own application', () => {
+    expect(decide(snap('DRAFT'), 'submit', user('VENDOR'))).toMatchObject({ ok: true, actingRole: 'VENDOR' });
+    expect(pendingWith(snap('SENT_BACK'))).toEqual(['VENDOR']);
+  });
+
   it('can be resubmitted after being sent back, and reviewers cannot submit', () => {
     expect(decide(snap('SENT_BACK'), 'submit', user('REQUESTER')).ok).toBe(true);
     expect(decide(snap('DRAFT'), 'submit', user('QC'))).toMatchObject({ ok: false, code: 'FORBIDDEN' });
@@ -83,7 +88,7 @@ describe('finance, send back, reject', () => {
   it('reject is terminal', () => {
     const d = decide(snap('FINANCE_REVIEW'), 'reject', user('FINANCE'), { submissionBlockers: [], reason: 'Blacklisted vendor' });
     expect(d).toMatchObject({ ok: true, to: 'REJECTED' });
-    expect(availableActions(snap('REJECTED'), ['ADMIN', 'FINANCE', 'QC', 'SCM', 'REQUESTER'])).toEqual([]);
+    expect(availableActions(snap('REJECTED'), ['ADMIN', 'FINANCE', 'QC', 'SCM', 'REQUESTER', 'VENDOR'])).toEqual([]);
   });
 });
 

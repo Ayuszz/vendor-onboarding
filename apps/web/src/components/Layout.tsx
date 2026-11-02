@@ -8,8 +8,12 @@ import { useAuth } from '../lib/auth';
 import { Avatar, Button, Logo } from './ui';
 
 export function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout: endSession } = useAuth();
   const navigate = useNavigate();
+  const logout = () => {
+    navigate('/', { replace: true });
+    endSession();
+  };
   const stats = useQuery({ queryKey: ['stats'], queryFn: api.stats, refetchInterval: 30_000 });
   if (!user) return null;
   const canCreate = user.roles.some((r) => r === 'REQUESTER' || r === 'ADMIN');

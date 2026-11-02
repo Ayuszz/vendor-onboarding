@@ -23,6 +23,8 @@ import {
   type DocumentDTO,
   type DocumentKey,
   type EventDTO,
+  type OtpRequestResult,
+  type SessionDTO,
   type Paged,
   type Role,
   type SapDTO,
@@ -46,13 +48,16 @@ class DemoError extends Error {
   }
 }
 
+const STAFF_PASSWORD = 'Demo@1234';
 const USERS: UserDTO[] = [
-  { id: 'u_requester', name: 'Riya Sharma', email: 'riya@example.com', roles: ['REQUESTER'] },
-  { id: 'u_qc', name: 'Arjun Patil', email: 'arjun@example.com', roles: ['QC'] },
-  { id: 'u_scm', name: 'Meera Kulkarni', email: 'meera@example.com', roles: ['SCM'] },
-  { id: 'u_finance', name: 'Vikram Desai', email: 'vikram@example.com', roles: ['FINANCE'] },
+  { id: 'u_requester', name: 'Riya Sharma', email: 'buyer@example.com', roles: ['REQUESTER'] },
+  { id: 'u_qc', name: 'Arjun Patil', email: 'qc@example.com', roles: ['QC'] },
+  { id: 'u_scm', name: 'Meera Kulkarni', email: 'scm@example.com', roles: ['SCM'] },
+  { id: 'u_finance', name: 'Vikram Desai', email: 'finance@example.com', roles: ['FINANCE'] },
   { id: 'u_admin', name: 'Admin', email: 'admin@example.com', roles: ['ADMIN'] },
 ];
+const STAFF_IDS = new Set(USERS.map((u) => u.id));
+const codes = new Map<string, { code: string; expires: number; attempts: number; sentAt: number }>();
 
 interface Doc extends DocumentDTO {
   revision: number;
@@ -67,6 +72,7 @@ interface Vendor {
   docs: Map<DocumentKey, Doc>;
   sap: SapDTO | null;
   createdBy: string;
+  vendorUserId: string | null;
   createdAt: string;
   updatedAt: string;
   submittedAt: string | null;
@@ -86,10 +92,11 @@ const clone = <T>(v: T): T => structuredClone(v);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const REVIEWERS: Role[] = ['QC', 'SCM', 'FINANCE', 'ADMIN'];
 const isReviewer = (u: UserDTO) => u.roles.some((r) => REVIEWERS.includes(r));
-const canView = (u: UserDTO, v: Vendor) => isReviewer(u) || v.createdBy === u.id;
+const owns = (u: UserDTO, v: Vendor) => v.createdBy === u.id || v.vendorUserId === u.id;
+const canView = (u: UserDTO, v: Vendor) => isReviewer(u) || owns(u, v);
 const canEdit = (u: UserDTO, v: Vendor) =>
   (v.state === 'DRAFT' || v.state === 'SENT_BACK') &&
-  (u.roles.includes('ADMIN') || (u.roles.includes('REQUESTER') && v.createdBy === u.id));
+  (u.roles.includes('ADMIN') || (u.roles.some((r) => r === 'REQUESTER' || r === 'VENDOR') && owns(u, v)));
 
 function me(): UserDTO {
   if (!currentUser) throw new DemoError(401, 'UNAUTHORIZED', 'Sign in first');
@@ -188,8 +195,12 @@ function sapSync(v: Vendor, delay: number) {
 // ── operations (mirroring services/vendors.ts) ──
 
 function create(u: UserDTO, draft: VendorDraft) {
-  if (!u.roles.some((r) => r === 'REQUESTER' || r === 'ADMIN'))
-    throw new DemoError(403, 'FORBIDDEN', 'Only requesters can create vendors');
+  if (!u.roles.some((r) => r === 'REQUESTER' || r === 'VENDOR' || r === 'ADMIN'))
+    throw new DemoError(403, 'FORBIDDEN', 'Only vendors and buyers can start an application');
+  const isVendor = u.roles.includes('VENDOR');
+  if (isVendor && [...db.values()].some((x) => x.vendorUserId === u.id))
+    throw new DemoError(409, 'CONFLICT', 'Your company already has an application.');
+  if (isVendor) draft = { ...draft, contact: { ...draft.contact, email: u.email } };
   const t = now();
   const v: Vendor = {
     id: crypto.randomUUID(),
@@ -200,6 +211,7 @@ function create(u: UserDTO, draft: VendorDraft) {
     docs: new Map(),
     sap: null,
     createdBy: u.id,
+    vendorUserId: isVendor ? u.id : null,
     createdAt: t,
     updatedAt: t,
     submittedAt: null,
@@ -207,7 +219,7 @@ function create(u: UserDTO, draft: VendorDraft) {
     version: 0,
     events: [],
   };
-  log(v, { action: 'created', fromState: null, toState: 'DRAFT', actorName: u.name, role: 'REQUESTER', reason: null, detail: null });
+  log(v, { action: 'created', fromState: null, toState: 'DRAFT', actorName: u.name, role: isVendor ? 'VENDOR' : 'REQUESTER', reason: null, detail: null });
   db.set(v.id, v);
   return v;
 }
@@ -275,7 +287,7 @@ function inQueue(u: UserDTO, v: Vendor) {
     (u.roles.includes('SCM') && v.state === 'IN_REVIEW' && !done.has('SCM')) ||
     (u.roles.includes('FINANCE') && (v.state === 'FINANCE_REVIEW' || v.state === 'SAP_ERROR')) ||
     (u.roles.includes('ADMIN') && v.state === 'SAP_ERROR') ||
-    (u.roles.includes('REQUESTER') && (v.state === 'DRAFT' || v.state === 'SENT_BACK'))
+    (u.roles.some((r) => r === 'REQUESTER' || r === 'VENDOR') && (v.state === 'DRAFT' || v.state === 'SENT_BACK'))
   );
 }
 
@@ -358,6 +370,11 @@ function seed() {
 }
 let seeded = false;
 
+function sessionFor(u: UserDTO, withToken: boolean): SessionDTO {
+  const mine = u.roles.includes('VENDOR') ? [...db.values()].find((v) => v.vendorUserId === u.id) : undefined;
+  return { ...(withToken ? { token: `demo:${u.id}` } : {}), user: clone(u), vendorId: mine?.id ?? null };
+}
+
 // ── public surface (same shape as the HTTP `api`) ──
 
 const LATENCY = 180;
@@ -372,17 +389,55 @@ async function wrap<T>(fn: () => T): Promise<T> {
 }
 
 export const demoApi = {
-  devUsers: () => wrap(() => clone(USERS)),
-  devLogin: (userId: string) =>
-    wrap(() => {
-      const u = USERS.find((x) => x.id === userId);
-      if (!u) throw new DemoError(401, 'UNAUTHORIZED', 'Unknown user');
+  staffLogin: (email: string, password: string) =>
+    wrap((): SessionDTO => {
+      const u = USERS.find((x) => STAFF_IDS.has(x.id) && x.email === email.trim().toLowerCase());
+      if (!u || password !== STAFF_PASSWORD) throw new DemoError(401, 'UNAUTHORIZED', 'Email or password is incorrect');
       currentUser = u;
-      return { token: `demo:${u.id}`, user: clone(u) };
+      return sessionFor(u, true);
+    }),
+  requestCode: (raw: string) =>
+    wrap((): OtpRequestResult => {
+      const email = raw.trim().toLowerCase();
+      if (USERS.some((u) => STAFF_IDS.has(u.id) && u.email === email))
+        throw new DemoError(400, 'BAD_REQUEST', 'This is a staff email. Use the Employee tab to sign in with your password.');
+      const prev = codes.get(email);
+      if (prev && Date.now() - prev.sentAt < 30_000)
+        throw new DemoError(429, 'TOO_SOON', 'Wait 30 seconds before asking for another code.');
+      const code = String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
+      codes.set(email, { code, expires: Date.now() + 600_000, attempts: 0, sentAt: Date.now() });
+      return { sent: true, expiresInSeconds: 600, devCode: code };
+    }),
+  verifyCode: (raw: string, code: string) =>
+    wrap((): SessionDTO => {
+      const email = raw.trim().toLowerCase();
+      const c = codes.get(email);
+      if (!c || c.expires < Date.now()) throw new DemoError(400, 'EXPIRED', 'This code has expired. Ask for a new one.');
+      if (c.attempts >= 5) throw new DemoError(429, 'TOO_MANY_ATTEMPTS', 'Too many wrong codes. Ask for a new one.');
+      if (c.code !== code) {
+        c.attempts++;
+        throw new DemoError(400, 'WRONG_CODE', 'That code is not right. Check the latest email and try again.');
+      }
+      codes.delete(email);
+      let u = USERS.find((x) => x.email === email);
+      if (!u) {
+        const name = email.split('@')[0]!.replace(/[._-]+/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase());
+        u = { id: `v_${crypto.randomUUID()}`, name, email, roles: ['VENDOR'] };
+        USERS.push(u);
+      }
+      // Pre-existing vendor in the "database" for this contact email → link it to this account.
+      if (![...db.values()].some((x) => x.vendorUserId === u.id)) {
+        const match = [...db.values()]
+          .filter((x) => !x.vendorUserId && x.profile.contact?.email?.toLowerCase() === email)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+        if (match) match.vendorUserId = u.id;
+      }
+      currentUser = u;
+      return sessionFor(u, true);
     }),
   /** Restores the session from the stored token. */
   me: () =>
-    wrap(() => {
+    wrap((): SessionDTO => {
       if (!currentUser) {
         let t: string | null = null;
         try {
@@ -392,7 +447,7 @@ export const demoApi = {
         }
         currentUser = USERS.find((u) => t === `demo:${u.id}`) ?? null;
       }
-      return clone(me());
+      return sessionFor(me(), false);
     }),
   stats: () =>
     wrap((): StatsDTO => {

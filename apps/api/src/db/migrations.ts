@@ -104,6 +104,28 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       CREATE UNIQUE INDEX jobs_dedupe_idx ON jobs(dedupe_key) WHERE status IN ('queued', 'running');
     `,
   },
+  {
+    id: 2,
+    name: 'real_sign_in',
+    sql: /* sql */ `
+      -- Staff sign in with a password; vendors sign in with a one-time email code.
+      ALTER TABLE users ADD COLUMN password_hash text;
+      ALTER TABLE users ADD COLUMN kind text NOT NULL DEFAULT 'staff';
+
+      -- The vendor account that owns (and may edit) this vendor record. One record per account.
+      ALTER TABLE vendors ADD COLUMN vendor_user_id text REFERENCES users(id);
+      CREATE UNIQUE INDEX vendors_vendor_user_idx ON vendors(vendor_user_id) WHERE vendor_user_id IS NOT NULL;
+      CREATE INDEX vendors_contact_email_idx ON vendors (lower(profile->'contact'->>'email'));
+
+      CREATE TABLE login_codes (
+        email       text PRIMARY KEY,
+        code_hash   text NOT NULL,
+        expires_at  timestamptz NOT NULL,
+        attempts    integer NOT NULL DEFAULT 0,
+        created_at  timestamptz NOT NULL DEFAULT now()
+      );
+    `,
+  },
 ];
 
 export async function migrate(db: Db): Promise<number[]> {

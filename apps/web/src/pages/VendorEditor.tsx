@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { DocumentCard } from '../components/DocumentCard';
 import { Button, Field, Input, Panel, Select, Skeleton, Toggle, useToast } from '../components/ui';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
 
 const STEPS = ['Company', 'Contact & address', 'Bank', 'Documents', 'Review'] as const;
 
@@ -50,6 +51,7 @@ export default function VendorEditor() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
+  const { isVendor, vendorId: myVendorId, refresh, user } = useAuth();
   const step = Math.min(Math.max(Number(params.get('step') ?? 0), 0), STEPS.length - 1);
 
   const vendor = useQuery({
@@ -60,7 +62,13 @@ export default function VendorEditor() {
     refetchInterval: (q) => (q.state.data?.documents.some((d) => d.status === 'PENDING') ? 1500 : false),
   });
 
-  const [form, setForm] = useState<VendorDraft>({ isMsme: false, isImportExport: false, isFoodBusiness: false, paymentTermsDays: 30 });
+  const [form, setForm] = useState<VendorDraft>(() => ({
+    isMsme: false,
+    isImportExport: false,
+    isFoodBusiness: false,
+    paymentTermsDays: 30,
+    ...(isVendor && user ? { contact: { email: user.email } } : {}),
+  }));
   const [errors, setErrors] = useState<Errors>({});
   const [loadedId, setLoadedId] = useState<string | null>(null);
 
@@ -80,6 +88,7 @@ export default function VendorEditor() {
       qc.setQueryData(['vendor', v.id], v);
       qc.invalidateQueries({ queryKey: ['vendors'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
+      if (isVendor && !id) void refresh();
     },
   });
 
@@ -89,7 +98,7 @@ export default function VendorEditor() {
       qc.setQueryData(['vendor', v.id], v);
       qc.invalidateQueries({ queryKey: ['vendors'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
-      toast('Submitted for QC and SCM review');
+      toast(isVendor ? 'Application submitted' : 'Submitted for QC and SCM review');
       navigate(`/vendors/${v.id}`);
     },
     onError: (e) => toast(e.message, 'danger'),
@@ -122,6 +131,11 @@ export default function VendorEditor() {
   const docs = useMemo(() => applicableDocuments(form), [form]);
   const bank = form.bank?.ifsc ? resolveBank(form.bank.ifsc) : null;
 
+  // A vendor who already has an application never starts a second one.
+  if (isVendor && !id && myVendorId) {
+    navigate(`/vendors/${myVendorId}/edit`, { replace: true });
+    return null;
+  }
   if (id && vendor.isPending) return <Skeleton className="h-96 w-full" />;
   if (id && vendor.data && !editable) {
     navigate(`/vendors/${id}`, { replace: true });
@@ -131,12 +145,14 @@ export default function VendorEditor() {
   return (
     <div className="mx-auto max-w-[880px] space-y-5">
       <header className="flex items-center gap-3 px-1 pt-2">
-        <Button variant="ghost" size="sm" className="!px-2" aria-label="Back" onClick={() => navigate(id ? `/vendors/${id}` : '/')}>
-          <ChevronLeft className="size-5" />
-        </Button>
+        {(id || !isVendor) && (
+          <Button variant="ghost" size="sm" className="!px-2" aria-label="Back" onClick={() => navigate(id ? `/vendors/${id}` : '/')}>
+            <ChevronLeft className="size-5" />
+          </Button>
+        )}
         <div className="min-w-0">
           <h1 className="truncate text-[28px] leading-tight font-semibold tracking-[-0.025em]">
-            {form.legalName || 'New vendor'}
+            {form.legalName || (isVendor ? 'Register your company' : 'New vendor')}
           </h1>
           <p className="text-[13px] text-ink-3">
             {vendor.data ? `${vendor.data.reference} · ` : ''}
@@ -144,6 +160,13 @@ export default function VendorEditor() {
           </p>
         </div>
       </header>
+
+      {isVendor && !id && (
+        <p className="px-1 text-[15px] text-ink-2">
+          Welcome. Tell us about your company, add your bank details, then upload your documents. Your progress is saved at every
+          step, so you can stop and come back anytime.
+        </p>
+      )}
 
       {vendor.data?.state === 'SENT_BACK' && <SentBackNote vendorId={vendor.data.id} />}
 
@@ -235,7 +258,19 @@ export default function VendorEditor() {
                   {(fid) => <Input id={fid} autoComplete="name" value={form.contact?.name ?? ''} onChange={(e) => setIn('contact', 'name', e.target.value)} aria-invalid={!!errors['contact.name']} />}
                 </Field>
                 <Field label="Email" error={errors['contact.email']}>
-                  {(fid) => <Input id={fid} type="email" autoComplete="email" value={form.contact?.email ?? ''} onChange={(e) => setIn('contact', 'email', e.target.value)} aria-invalid={!!errors['contact.email']} />}
+                  {(fid, d) => (
+                    <Input
+                      id={fid}
+                      type="email"
+                      autoComplete="email"
+                      value={form.contact?.email ?? ''}
+                      onChange={(e) => setIn('contact', 'email', e.target.value)}
+                      aria-invalid={!!errors['contact.email']}
+                      aria-describedby={d}
+                      readOnly={isVendor}
+                      title={isVendor ? 'This is the email you sign in with' : undefined}
+                    />
+                  )}
                 </Field>
                 <Field label="Mobile" error={errors['contact.phone']}>
                   {(fid) => <Input id={fid} type="tel" inputMode="numeric" autoComplete="tel-national" value={form.contact?.phone ?? ''} onChange={(e) => setIn('contact', 'phone', e.target.value.replace(/\D/g, '').slice(0, 10))} aria-invalid={!!errors['contact.phone']} />}
@@ -320,7 +355,9 @@ export default function VendorEditor() {
                   <CheckCircle2 className="size-12 text-ok" />
                   <h2 className="mt-3 text-[22px] font-semibold tracking-[-0.015em]">Ready to submit</h2>
                   <p className="mt-1 max-w-md text-[14px] text-ink-2">
-                    QC and SCM review in parallel, then Finance approves and the vendor is created in SAP automatically.
+                    {isVendor
+                      ? 'Our quality and supply-chain teams review it first, then finance gives final approval. We’ll keep this page updated at every step.'
+                      : 'QC and SCM review in parallel, then Finance approves and the vendor is created in SAP automatically.'}
                   </p>
                 </div>
               ) : (

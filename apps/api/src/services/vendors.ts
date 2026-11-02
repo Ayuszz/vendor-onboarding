@@ -46,6 +46,7 @@ interface VendorRow {
   profile: VendorDraft;
   approvals: Approval[];
   created_by: string;
+  vendor_user_id: string | null;
   version: number;
   created_at: Date | string;
   updated_at: Date | string;
@@ -71,16 +72,18 @@ const EDITABLE_STATES: State[] = ['DRAFT', 'SENT_BACK'];
 const iso = (d: Date | string | null) => (d === null ? null : new Date(d).toISOString());
 
 const isReviewer = (u: UserDTO) => u.roles.some((r) => REVIEWER_ROLES.includes(r));
-const canView = (u: UserDTO, v: VendorRow) => isReviewer(u) || v.created_by === u.id;
+const owns = (u: UserDTO, v: VendorRow) => v.vendor_user_id === u.id || v.created_by === u.id;
+const canView = (u: UserDTO, v: VendorRow) => isReviewer(u) || owns(u, v);
 const canEdit = (u: UserDTO, v: VendorRow) =>
-  EDITABLE_STATES.includes(v.state) && (u.roles.includes('ADMIN') || (u.roles.includes('REQUESTER') && v.created_by === u.id));
+  EDITABLE_STATES.includes(v.state) &&
+  (u.roles.includes('ADMIN') || (u.roles.some((r) => r === 'REQUESTER' || r === 'VENDOR') && owns(u, v)));
 
 // ───────────────────────────── reads ─────────────────────────────
 
 async function loadVendor(q: Queryable, id: string, lock = false): Promise<VendorRow> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw notFound('Vendor');
   const { rows } = await q.query<VendorRow>(
-    `SELECT id, reference, state, profile, approvals, created_by, version, created_at, updated_at
+    `SELECT id, reference, state, profile, approvals, created_by, vendor_user_id, version, created_at, updated_at
      FROM vendors WHERE id = $1 ${lock ? 'FOR UPDATE' : ''}`,
     [id],
   );
@@ -174,7 +177,7 @@ function queueFilter(roles: Role[]): { sql: string; params: unknown[] } | null {
   if (roles.includes('SCM')) clauses.push(`(v.state = 'IN_REVIEW' AND NOT v.approvals @> '[{"role":"SCM"}]')`);
   if (roles.includes('FINANCE')) clauses.push(`v.state IN ('FINANCE_REVIEW', 'SAP_ERROR')`);
   if (roles.includes('ADMIN')) clauses.push(`v.state = 'SAP_ERROR'`);
-  if (roles.includes('REQUESTER')) clauses.push(`v.state IN ('DRAFT', 'SENT_BACK')`);
+  if (roles.includes('REQUESTER') || roles.includes('VENDOR')) clauses.push(`v.state IN ('DRAFT', 'SENT_BACK')`);
   return clauses.length ? { sql: `(${clauses.join(' OR ')})`, params: [] } : null;
 }
 
@@ -186,7 +189,10 @@ export async function listVendors(deps: Deps, user: UserDTO, query: ListQuery): 
     return `$${params.length}`;
   };
 
-  if (!isReviewer(user)) where.push(`v.created_by = ${p(user.id)}`);
+  if (!isReviewer(user)) {
+    const me = p(user.id);
+    where.push(`(v.created_by = ${me} OR v.vendor_user_id = ${me})`);
+  }
   if (query.state) where.push(`v.state = ${p(query.state)}`);
   if (query.q) {
     const term = `%${query.q.replace(/[%_\\]/g, '\\$&')}%`;
@@ -263,7 +269,7 @@ export async function listEvents(deps: Deps, user: UserDTO, id: string): Promise
 }
 
 export async function stats(deps: Deps, user: UserDTO): Promise<StatsDTO> {
-  const scope = isReviewer(user) ? '' : 'WHERE created_by = $1';
+  const scope = isReviewer(user) ? '' : 'WHERE (created_by = $1 OR vendor_user_id = $1)';
   const params = isReviewer(user) ? [] : [user.id];
   const { rows } = await deps.db.query<{ state: State; n: string | number }>(
     `SELECT state, count(*) AS n FROM vendors ${scope} GROUP BY state`,
@@ -321,17 +327,23 @@ function checkVersion(v: VendorRow, version: number | undefined) {
 }
 
 export async function createVendor(deps: Deps, user: UserDTO, draft: VendorDraft) {
-  if (!user.roles.some((r) => r === 'REQUESTER' || r === 'ADMIN')) throw forbidden('Only requesters can create vendors');
-  const profile = vendorDraftSchema.parse(draft);
+  if (!user.roles.some((r) => r === 'REQUESTER' || r === 'VENDOR' || r === 'ADMIN'))
+    throw forbidden('Only vendors and buyers can start an application');
+  const isVendor = user.roles.includes('VENDOR');
+  const profile = vendorDraftSchema.parse(isVendor ? { ...draft, contact: { ...draft.contact, email: user.email } } : draft);
   const id = await deps.db.transaction(async (tx) => {
+    if (isVendor) {
+      const { rows: mine } = await tx.query('SELECT 1 FROM vendors WHERE vendor_user_id = $1', [user.id]);
+      if (mine.length) throw conflict('Your company already has an application. Open it from your home page.');
+    }
     const { rows } = await tx.query<{ id: string }>(
-      `INSERT INTO vendors (reference, state, profile, created_by)
-       VALUES ('VO-' || to_char(now(), 'YYYY') || '-' || nextval('vendor_ref_seq'), 'DRAFT', $1, $2)
+      `INSERT INTO vendors (reference, state, profile, created_by, vendor_user_id)
+       VALUES ('VO-' || to_char(now(), 'YYYY') || '-' || nextval('vendor_ref_seq'), 'DRAFT', $1, $2, $3)
        RETURNING id`,
-      [JSON.stringify(profile), user.id],
+      [JSON.stringify(profile), user.id, isVendor ? user.id : null],
     );
     const vendorId = rows[0]!.id;
-    await logEvent(tx, { vendorId, action: 'created', to: 'DRAFT', actor: user, role: 'REQUESTER' });
+    await logEvent(tx, { vendorId, action: 'created', to: 'DRAFT', actor: user, role: isVendor ? 'VENDOR' : 'REQUESTER' });
     return vendorId;
   });
   return getVendor(deps, user, id);
@@ -432,7 +444,7 @@ export async function upsertDocument(deps: Deps, user: UserDTO, id: string, key:
         vendorId: id,
         action: 'document_uploaded',
         actor: user,
-        role: 'REQUESTER',
+        role: user.roles.includes('VENDOR') ? 'VENDOR' : 'REQUESTER',
         detail: { document: docKey, file: input.file?.name ?? null },
       });
     });
