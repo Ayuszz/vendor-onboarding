@@ -10,7 +10,7 @@ if (js.length !== 1) throw new Error(`expected one JS bundle, found ${js.length}
 const code = readFileSync(path.join(dir, 'assets', js[0]), 'utf8').replace(/<\/script/gi, '<\\/script');
 
 const html = `<title>Vendor Onboarding</title>
-<meta name="theme-color" content="#e9eef6">
+<meta name="theme-color" content="#0f141c">
 <style>${css}</style>
 <div id="root"></div>
 <script type="module">${code}</script>

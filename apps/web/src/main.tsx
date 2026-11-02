@@ -7,8 +7,13 @@ import { VendorLayout } from './components/VendorLayout';
 import { Skeleton, ToastProvider } from './components/ui';
 import { ApiError, IS_DEMO } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
+import { applyTheme } from './lib/theme';
 import Login from './pages/Login';
 import './styles.css';
+
+// Apply the saved theme before the first paint so there is no flash.
+applyTheme();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme());
 
 const Overview = lazy(() => import('./pages/Overview'));
 const Vendors = lazy(() => import('./pages/Vendors'));

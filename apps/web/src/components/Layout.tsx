@@ -5,6 +5,7 @@ import { Building2, Inbox, LayoutGrid, LogOut, Plus } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { ThemeToggle } from './ThemeToggle';
 import { Avatar, Button, Logo } from './ui';
 
 export function Layout() {
@@ -70,13 +71,14 @@ export function Layout() {
             ))}
           </nav>
 
-          <div className="mt-auto flex items-center gap-3 rounded-(--radius-panel) p-2">
+          <ThemeToggle className="mt-auto mb-3 w-full" />
+          <div className="flex items-center gap-3 rounded-(--radius-panel) p-2">
             <Avatar name={user.name} />
             <div className="min-w-0 flex-1 leading-tight">
               <div className="truncate text-[14px] font-medium">{user.name}</div>
               <div className="truncate text-[12px] text-ink-3">{user.roles.map((r) => ROLE_LABELS[r]).join(', ')}</div>
             </div>
-            <Button variant="ghost" size="sm" className="!px-2" onClick={logout} aria-label="Switch user">
+            <Button variant="ghost" size="sm" className="!px-2" onClick={logout} aria-label="Sign out">
               <LogOut className="size-4" />
             </Button>
           </div>
@@ -88,9 +90,12 @@ export function Layout() {
             <div className="flex items-center gap-2 text-[15px] font-semibold">
               <Logo className="size-6" /> Vendors
             </div>
-            <button onClick={logout} className="focus-ring rounded-full" aria-label="Switch user">
-              <Avatar name={user.name} />
-            </button>
+            <div className="flex items-center gap-2">
+              <ThemeToggle compact />
+              <button onClick={logout} className="focus-ring rounded-full" aria-label="Sign out">
+                <Avatar name={user.name} />
+              </button>
+            </div>
           </div>
           <Outlet />
         </main>

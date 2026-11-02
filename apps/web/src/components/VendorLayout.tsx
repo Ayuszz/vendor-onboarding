@@ -3,6 +3,7 @@ import { LogOut } from 'lucide-react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { ThemeToggle } from './ThemeToggle';
 import { Button, Logo } from './ui';
 
 /** Lean shell for vendor accounts: no internal navigation, just their own application. */
@@ -27,8 +28,9 @@ export function VendorLayout() {
             <div className="truncate text-[15px] font-semibold">{company || 'Vendor portal'}</div>
             <div className="truncate text-[12px] text-ink-3">{user?.email}</div>
           </div>
-          <Button variant="ghost" size="sm" icon={<LogOut className="size-4" />} onClick={signOut}>
-            Sign out
+          <ThemeToggle compact />
+          <Button variant="ghost" size="sm" icon={<LogOut className="size-4" />} onClick={signOut} aria-label="Sign out">
+            <span className="hidden sm:inline">Sign out</span>
           </Button>
         </div>
       </header>

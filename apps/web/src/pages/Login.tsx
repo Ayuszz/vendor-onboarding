@@ -1,6 +1,7 @@
 import clsx from 'clsx';
 import { ArrowLeft, Mail } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { Button, Field, Input, Logo } from '../components/ui';
 import { IS_DEMO, api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -22,7 +23,10 @@ export default function Login() {
         <i />
       </div>
       <div className="glass animate-rise w-full max-w-[420px] rounded-(--radius-window) p-7 sm:p-8">
-        <Logo className="mb-5 size-12" />
+        <div className="mb-5 flex items-start justify-between">
+          <Logo className="size-12" />
+          <ThemeToggle compact />
+        </div>
         <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.02em] text-balance">
           {tab === 'vendor' ? 'Vendor portal' : 'Employee sign-in'}
         </h1>
