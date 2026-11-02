@@ -1,0 +1,26 @@
+{
+  "name": "vendor-onboarding",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Vendor onboarding platform: workflow engine, document verification, multi-level approvals and SAP sync, with a glass UI.",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,magenta \"npm run dev -w @vo/api\" \"npm run dev -w @vo/web\"",
+    "dev:api": "npm run dev -w @vo/api",
+    "dev:web": "npm run dev -w @vo/web",
+    "build": "npm run build -w @vo/shared && npm run build -w @vo/api && npm run build -w @vo/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "start": "npm run start -w @vo/api"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
+}

@@ -1,0 +1,250 @@
+@import 'tailwindcss';
+
+/*
+  Glass design system
+  ───────────────────
+  Glass is reserved for chrome and grouping surfaces (sidebar, panels, dock, dialogs).
+  Anything people read closely — inputs, tables, document fields — sits on a denser
+  "frost" surface so contrast never depends on what is behind it.
+  Radii follow hierarchy: window 28 → panel 22 → control 12 → chip full.
+*/
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI Variable', 'Segoe UI',
+    Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  --color-ink: #1b2330;
+  --color-ink-2: #4a5566;
+  --color-ink-3: #7b8696;
+  --color-accent: #0a66ff;
+  --color-accent-soft: #e3eeff;
+  --color-ok: #17905f;
+  --color-ok-soft: #dff4ea;
+  --color-warn: #b97a09;
+  --color-warn-soft: #fbf0d6;
+  --color-bad: #cf3b31;
+  --color-bad-soft: #fbe3e1;
+  --color-info: #0a66ff;
+  --color-info-soft: #e3eeff;
+
+  --radius-window: 28px;
+  --radius-panel: 22px;
+  --radius-control: 12px;
+
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+:root {
+  color-scheme: light;
+  --glass: rgb(255 255 255 / 0.52);
+  --glass-strong: rgb(255 255 255 / 0.74);
+  --frost: rgb(255 255 255 / 0.88);
+  --glass-edge: rgb(255 255 255 / 0.7);
+  --glass-line: rgb(27 35 48 / 0.08);
+  --glass-shadow: 0 1px 1px rgb(27 35 48 / 0.04), 0 12px 40px -12px rgb(40 60 100 / 0.22);
+  --blur: saturate(180%) blur(28px);
+  --field-bg: rgb(27 35 48 / 0.045);
+  --field-bg-hover: rgb(27 35 48 / 0.07);
+  --scene-1: #9ec5ec;
+  --scene-2: #f4c3a4;
+  --scene-3: #b7e1cf;
+  --scene-base: #e9eef6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --color-ink: #eef2f8;
+    --color-ink-2: #b4bdca;
+    --color-ink-3: #8691a2;
+    --color-accent: #4c93ff;
+    --color-accent-soft: rgb(76 147 255 / 0.16);
+    --color-ok: #3fc58f;
+    --color-ok-soft: rgb(63 197 143 / 0.15);
+    --color-warn: #f0b546;
+    --color-warn-soft: rgb(240 181 70 / 0.15);
+    --color-bad: #ff6b60;
+    --color-bad-soft: rgb(255 107 96 / 0.15);
+    --color-info: #4c93ff;
+    --color-info-soft: rgb(76 147 255 / 0.16);
+    --glass: rgb(28 34 46 / 0.5);
+    --glass-strong: rgb(28 34 46 / 0.72);
+    --frost: rgb(30 37 50 / 0.9);
+    --glass-edge: rgb(255 255 255 / 0.1);
+    --glass-line: rgb(255 255 255 / 0.08);
+    --glass-shadow: 0 1px 1px rgb(0 0 0 / 0.2), 0 16px 48px -16px rgb(0 0 0 / 0.6);
+    --field-bg: rgb(255 255 255 / 0.06);
+    --field-bg-hover: rgb(255 255 255 / 0.09);
+    --scene-1: #1d3d66;
+    --scene-2: #4a2c3a;
+    --scene-3: #17423a;
+    --scene-base: #0f141c;
+  }
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: var(--scene-base);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'tnum' 0;
+  letter-spacing: -0.005em;
+}
+
+/* The scene behind the glass. Static blobs (no animation loop) keep the GPU idle. */
+.scene {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  background: var(--scene-base);
+}
+.scene::before,
+.scene::after,
+.scene > i {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.85;
+}
+.scene::before {
+  width: 58vw;
+  height: 58vw;
+  left: -12vw;
+  top: -18vw;
+  background: var(--scene-1);
+}
+.scene::after {
+  width: 46vw;
+  height: 46vw;
+  right: -10vw;
+  top: 8vh;
+  background: var(--scene-2);
+}
+.scene > i {
+  width: 50vw;
+  height: 40vw;
+  left: 26vw;
+  bottom: -22vw;
+  background: var(--scene-3);
+}
+
+@layer components {
+  .glass {
+    background: var(--glass);
+    -webkit-backdrop-filter: var(--blur);
+    backdrop-filter: var(--blur);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--glass-shadow), inset 0 1px 0 rgb(255 255 255 / 0.45);
+  }
+  .glass-strong {
+    background: var(--glass-strong);
+    -webkit-backdrop-filter: var(--blur);
+    backdrop-filter: var(--blur);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--glass-shadow), inset 0 1px 0 rgb(255 255 255 / 0.45);
+  }
+  .frost {
+    background: var(--frost);
+    border: 1px solid var(--glass-line);
+  }
+  .hairline {
+    border-color: var(--glass-line);
+  }
+
+  .field {
+    width: 100%;
+    border-radius: var(--radius-control);
+    background: var(--field-bg);
+    border: 1px solid transparent;
+    padding: 0.625rem 0.8rem;
+    font-size: 0.9375rem;
+    color: var(--color-ink);
+    transition:
+      background 0.15s,
+      border-color 0.15s,
+      box-shadow 0.15s;
+  }
+  .field::placeholder {
+    color: var(--color-ink-3);
+  }
+  .field:hover {
+    background: var(--field-bg-hover);
+  }
+  .field:focus {
+    outline: none;
+    background: var(--frost);
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 4px var(--color-accent-soft);
+  }
+  .field[aria-invalid='true'] {
+    border-color: var(--color-bad);
+  }
+
+  .focus-ring:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-strong {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--frost);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Journey rail: the one animated moment — light travelling along the current segment. */
+@keyframes travel {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+.journey-live::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.85), transparent);
+  animation: travel 2.4s var(--ease-spring) infinite;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-rise {
+  animation: rise 0.32s var(--ease-spring) both;
+}

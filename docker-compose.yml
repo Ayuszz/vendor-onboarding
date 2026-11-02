@@ -1,0 +1,47 @@
+# Production-like local stack: Postgres + API + separate worker + web.
+#   cp .env.example .env   (set JWT_SECRET)
+#   docker compose up --build   →  http://localhost:8080
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vo
+      POSTGRES_PASSWORD: vo
+      POSTGRES_DB: vendor_onboarding
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U vo']
+      interval: 5s
+      retries: 10
+
+  api:
+    build: { context: ., target: api }
+    env_file: .env
+    environment:
+      NODE_ENV: development # set to production once AUTH_MODE=jwt and SSO is wired
+      DATABASE_URL: postgres://vo:vo@db:5432/vendor_onboarding
+      WORKER_ENABLED: 'false'
+      UPLOAD_DIR: /app/.data/uploads
+      CORS_ORIGIN: http://localhost:8080
+    volumes: [uploads:/app/.data/uploads]
+    depends_on: { db: { condition: service_healthy } }
+
+  worker:
+    build: { context: ., target: api }
+    command: ['npx', 'tsx', 'apps/api/src/worker.ts']
+    env_file: .env
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://vo:vo@db:5432/vendor_onboarding
+      UPLOAD_DIR: /app/.data/uploads
+    volumes: [uploads:/app/.data/uploads]
+    depends_on: { db: { condition: service_healthy } }
+
+  web:
+    build: { context: ., target: web }
+    ports: ['8080:80']
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  uploads:
