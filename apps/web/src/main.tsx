@@ -1,10 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, MemoryRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Skeleton, ToastProvider } from './components/ui';
-import { ApiError } from './lib/api';
+import { ApiError, IS_DEMO } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import Login from './pages/Login';
 import './styles.css';
@@ -13,6 +13,8 @@ const Overview = lazy(() => import('./pages/Overview'));
 const Vendors = lazy(() => import('./pages/Vendors'));
 const VendorEditor = lazy(() => import('./pages/VendorEditor'));
 const VendorDetail = lazy(() => import('./pages/VendorDetail'));
+
+const Router = IS_DEMO ? MemoryRouter : BrowserRouter;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -57,13 +59,13 @@ function Gate() {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <Router>
         <ToastProvider>
           <AuthProvider>
             <Gate />
           </AuthProvider>
         </ToastProvider>
-      </BrowserRouter>
+      </Router>
     </QueryClientProvider>
   </StrictMode>,
 );

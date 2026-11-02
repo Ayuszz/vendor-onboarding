@@ -1,8 +1,8 @@
 import { ROLE_LABELS, type UserDTO } from '@vo/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Avatar, Skeleton, useToast } from '../components/ui';
-import { api } from '../lib/api';
+import { Avatar, Logo, Skeleton, useToast } from '../components/ui';
+import { IS_DEMO, api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
 const ROLE_HELP: Record<string, string> = {
@@ -36,9 +36,14 @@ export default function Login() {
         <i />
       </div>
       <div className="glass animate-rise w-full max-w-[420px] rounded-(--radius-window) p-7 sm:p-8">
-        <img src="/favicon.svg" alt="" className="mb-5 size-12" />
+        <Logo className="mb-5 size-12" />
         <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.02em]">Sign in to Vendor Onboarding</h1>
         <p className="mt-2 text-[15px] text-ink-2">Pick a demo account. Each one sees the app the way that team does.</p>
+        {IS_DEMO && (
+          <p className="mt-3 rounded-(--radius-control) bg-accent-soft px-3 py-2 text-[13px] text-accent">
+            This is a live demo running in your browser. SAP and document checks are simulated, and changes reset when you reload.
+          </p>
+        )}
 
         <ul className="mt-6 flex flex-col gap-1.5">
           {users.isPending &&

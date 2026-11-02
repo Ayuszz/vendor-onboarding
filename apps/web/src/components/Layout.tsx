@@ -5,7 +5,7 @@ import { Building2, Inbox, LayoutGrid, LogOut, Plus } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { Avatar, Button } from './ui';
+import { Avatar, Button, Logo } from './ui';
 
 export function Layout() {
   const { user, logout } = useAuth();
@@ -27,11 +27,11 @@ export function Layout() {
         <i />
       </div>
 
-      <div className="mx-auto flex max-w-[1440px] gap-5 p-3 sm:p-5">
+      <div className="mx-auto flex max-w-[1440px] gap-5 p-4 sm:p-5">
         {/* Sidebar (desktop) */}
         <aside className="glass sticky top-5 hidden h-[calc(100dvh-40px)] w-[248px] shrink-0 flex-col rounded-(--radius-window) p-4 lg:flex">
           <div className="flex items-center gap-2.5 px-2 pt-1 pb-6">
-            <img src="/favicon.svg" alt="" className="size-8" />
+            <Logo className="size-8" />
             <div className="leading-tight">
               <div className="text-[15px] font-semibold">Vendor Onboarding</div>
               <div className="text-[12px] text-ink-3">Procurement</div>
@@ -82,7 +82,7 @@ export function Layout() {
           {/* Top bar (mobile) */}
           <div className="glass mb-4 flex items-center justify-between rounded-full py-2 pr-2 pl-4 lg:hidden">
             <div className="flex items-center gap-2 text-[15px] font-semibold">
-              <img src="/favicon.svg" alt="" className="size-6" /> Vendors
+              <Logo className="size-6" /> Vendors
             </div>
             <button onClick={logout} className="focus-ring rounded-full" aria-label="Switch user">
               <Avatar name={user.name} />

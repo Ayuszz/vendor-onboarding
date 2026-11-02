@@ -315,3 +315,19 @@ export function Avatar({ name, className }: { name: string; className?: string }
     </span>
   );
 }
+
+/** App mark, inlined so it renders anywhere (including single-file builds). */
+export function Logo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 64 64" className={className} aria-hidden>
+      <defs>
+        <linearGradient id="vo-logo" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#5aa9ff" />
+          <stop offset="1" stopColor="#0a66ff" />
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx="16" fill="url(#vo-logo)" />
+      <path d="M18 33l9 9 19-20" fill="none" stroke="#fff" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}

@@ -11,6 +11,7 @@ import type {
   VendorDraft,
   VendorListItem,
 } from '@vo/shared';
+import { demoApi } from './demoApi';
 
 const TOKEN_KEY = 'vo.token';
 
@@ -76,7 +77,7 @@ const qs = (p: Record<string, unknown>) => {
   return str ? `?${str}` : '';
 };
 
-export const api = {
+const httpApi = {
   devUsers: () => request<UserDTO[]>('/auth/dev-users'),
   devLogin: (userId: string) =>
     request<{ token: string; user: UserDTO }>('/auth/dev-login', { method: 'POST', body: JSON.stringify({ userId }) }),
@@ -110,3 +111,10 @@ export const api = {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   },
 };
+
+/**
+ * `npm run build:demo` swaps in an in-browser backend (same shared rules, no server)
+ * so the UI can be shared as a single static file. Normal builds tree-shake it away.
+ */
+export const IS_DEMO = import.meta.env.VITE_DEMO === '1';
+export const api: typeof httpApi = IS_DEMO ? demoApi : httpApi;

@@ -2,6 +2,8 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
+const demo = process.env.VITE_DEMO === '1';
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
@@ -10,6 +12,8 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
-    sourcemap: true,
+    sourcemap: !demo,
+    // The demo ships as one self-contained file, so code-splitting is turned off for it.
+    ...(demo ? { outDir: 'dist-demo', assetsInlineLimit: 1e9, rollupOptions: { output: { inlineDynamicImports: true } } } : {}),
   },
 });
