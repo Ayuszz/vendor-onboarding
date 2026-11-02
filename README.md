@@ -1,6 +1,6 @@
 # Vendor Onboarding
 
-**Live demo:** https://ayuszz.github.io/vendor-onboarding/ (runs entirely in your browser; SAP and document checks are simulated and reset on reload)
+**Live demo:** https://ayuszz.github.io/vendor-onboarding/ (runs entirely in your browser with no server, so SAP, document checks and sign-in emails are simulated; on that demo site only, the sign-in code is shown on screen. The real app delivers it only by email.)
 
 A coded replacement for a low-code vendor onboarding workflow. A requester collects a supplier's details and statutory documents. Each document is checked automatically. Quality (QC) and Supply Chain (SCM) review in parallel, Finance gives the final approval, and the vendor is created in SAP. If SAP fails, the system retries and keeps the same card code each time.
 
@@ -23,8 +23,10 @@ npm run dev                 # API on :4000, web on :5173
 
 Open <http://localhost:5173>. There is one sign-in page with two tabs:
 
-- **Vendor:** enter any email and you get a 6-digit code. In development no email is sent, so the code appears on screen and in the API log. A new email goes straight to company registration and document upload. If a vendor record with that contact email already exists in the database, it is linked to the account and the vendor sees its status.
-- **Employee:** sign in with `qc@example.com`, `scm@example.com`, `finance@example.com`, `buyer@example.com` or `admin@example.com`. The password for all of them is `Demo@1234`. These sample accounts are only created when `AUTH_MODE=dev`.
+- **Vendor:** enter an email and a 6-digit code is emailed to it. The code is **only** delivered by email: the API never returns it, and the database stores only an HMAC of it. The vendor types the code from their inbox, the server checks it, and then signs them in. A new email goes straight to company registration and document upload. If a vendor record with that contact email already exists, it is linked to the account and the vendor sees its status.
+  - With `MAILER=console` (the local default) no email is sent, and the email is printed to the **API terminal**, not the browser.
+  - To send real emails, set `MAILER=smtp` and the `SMTP_*` settings in `.env`.
+  - For quick local testing you can set `DEV_SHOW_OTP=true` to also show the code in the browser. The app refuses to start with that setting in production.
  The database is an embedded Postgres (PGlite) stored in `.data/`, so nothing else needs installing. API docs are at <http://localhost:4000/docs>.
 
 ```bash
@@ -95,7 +97,7 @@ To call external providers (GSTN, NSDL, penny-drop), add them in `jobs/handlers.
 
 ## Going to production
 
-1. **Sign-in.** Implement the `Mailer` interface (`integrations/mailer.ts`) with SMTP, SES or Microsoft Graph so vendors receive their codes, and set `AUTH_MODE=jwt` so codes are never returned in API responses. Create staff accounts with hashed passwords (scrypt, see `services/auth.ts`), or put your company SSO in front of the Employee tab. `AUTH_MODE=dev` refuses to start when `NODE_ENV=production`.
+1. **Sign-in.** Set `MAILER=smtp` with your mail server's `SMTP_*` settings and `MAIL_FROM`. The server checks the SMTP connection when it starts. Production refuses to start without SMTP, or with `DEV_SHOW_OTP=true`. Create staff accounts with hashed passwords (scrypt, see `services/auth.ts`), or put your company SSO in front of the Employee tab. `AUTH_MODE=dev` refuses to start when `NODE_ENV=production`.
 2. **Database.** Set `DATABASE_URL` to a managed Postgres. Migrations run on boot. You can also run them with `npm run db:migrate -w @vo/api`.
 3. **SAP.** Set `SAP_MODE=service_layer` and the `SAP_*` variables, then map `PayTermsGrpCode` and any custom user-defined fields in `integrations/sap.ts → toBusinessPartner`.
 4. **Files.** Implement `FileStorage` for S3 or Azure Blob. It needs three methods.

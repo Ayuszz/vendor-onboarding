@@ -1,4 +1,4 @@
-import { createHash, randomInt, randomUUID, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomInt, randomUUID, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { OtpRequestResult, Role, SessionDTO, UserDTO } from '@vo/shared';
 import { signToken } from '../auth.js';
@@ -42,8 +42,9 @@ interface UserRow {
   password_hash: string | null;
 }
 
+/** Only an HMAC of the code is stored, so a database leak does not reveal live codes. */
 const codeHash = (cfg: Config, email: string, code: string) =>
-  createHash('sha256').update(`${cfg.JWT_SECRET}:${email}:${code}`).digest('hex');
+  createHmac('sha256', cfg.JWT_SECRET).update(`${email}:${code}`).digest('hex');
 
 async function vendorIdFor(q: Queryable, user: UserDTO): Promise<string | null> {
   if (!user.roles.includes('VENDOR')) return null;
@@ -94,12 +95,31 @@ export async function requestCode(deps: AuthDeps, email: string): Promise<OtpReq
        attempts = 0, created_at = now()`,
     [email, codeHash(deps.cfg, email, code), String(CODE_TTL_SECONDS)],
   );
-  await deps.mailer.send({
-    to: email,
-    subject: `Your sign-in code: ${code}`,
-    text: `Use ${code} to sign in to the vendor portal. It expires in ${CODE_TTL_SECONDS / 60} minutes.\n\nIf you did not ask for this, ignore this email.`,
-  });
-  return { sent: true, expiresInSeconds: CODE_TTL_SECONDS, ...(deps.cfg.AUTH_MODE === 'dev' ? { devCode: code } : {}) };
+  try {
+    await deps.mailer.send(codeEmail(email, code));
+  } catch (err) {
+    // Don't leave a code nobody received; let the user try again straight away.
+    await deps.db.query('DELETE FROM login_codes WHERE email = $1', [email]);
+    throw new AppError(502, 'EMAIL_FAILED', 'We couldn’t send the email just now. Try again in a minute.', String(err));
+  }
+  // The code itself is never returned, unless a developer has explicitly turned on
+  // DEV_SHOW_OTP for local testing (refused in production by config validation).
+  return { sent: true, expiresInSeconds: CODE_TTL_SECONDS, ...(deps.cfg.DEV_SHOW_OTP ? { devCode: code } : {}) };
+}
+
+function codeEmail(to: string, code: string) {
+  const minutes = CODE_TTL_SECONDS / 60;
+  return {
+    to,
+    subject: 'Your vendor portal sign-in code',
+    text: `Your sign-in code is ${code}\n\nEnter it on the sign-in page to continue. It expires in ${minutes} minutes and can be used once.\n\nIf you didn’t try to sign in, you can ignore this email. Never share this code with anyone.`,
+    html: `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1b2330">
+  <p style="font-size:15px;margin:0 0 16px">Your sign-in code for the vendor portal:</p>
+  <p style="font-size:32px;font-weight:700;letter-spacing:8px;margin:0 0 16px;font-variant-numeric:tabular-nums">${code}</p>
+  <p style="font-size:14px;color:#4a5566;margin:0 0 8px">It expires in ${minutes} minutes and can be used once.</p>
+  <p style="font-size:13px;color:#7b8696;margin:0">If you didn’t try to sign in, ignore this email. Never share this code with anyone.</p>
+</div>`,
+  };
 }
 
 /**

@@ -3,7 +3,7 @@ import { loadConfig } from './config.js';
 import { createDb } from './db/client.js';
 import { migrate } from './db/migrations.js';
 import { seed } from './db/seed.js';
-import { ConsoleMailer } from './integrations/mailer.js';
+import { SmtpMailer, createMailer } from './integrations/mailer.js';
 import { MockSapClient, ServiceLayerSapClient } from './integrations/sap.js';
 import { localStorage } from './storage.js';
 
@@ -22,7 +22,13 @@ const sap =
       })
     : new MockSapClient();
 
-const mailer = new ConsoleMailer((line) => console.log(line));
+const mailer = createMailer(cfg, (line) => console.log(line));
+if (mailer instanceof SmtpMailer) {
+  await mailer.verify().then(
+    () => console.log(`SMTP ready (${cfg.SMTP_HOST}:${cfg.SMTP_PORT})`),
+    (err: Error) => console.error(`SMTP check failed: ${err.message} — vendor sign-in emails will not be delivered`),
+  );
+}
 const app = await buildApp({ cfg, db, storage: localStorage(cfg.UPLOAD_DIR), sap, mailer });
 
 const shutdown = async (signal: string) => {

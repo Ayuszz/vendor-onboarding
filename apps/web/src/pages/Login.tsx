@@ -152,7 +152,9 @@ function VendorSignIn() {
       </p>
       {devCode && (
         <p className="rounded-(--radius-control) bg-accent-soft px-3 py-2 text-[13px] text-accent">
-          {IS_DEMO ? 'Demo' : 'Development'}: no email is sent. Your code is{' '}
+          {IS_DEMO
+            ? 'Demo only: this site has no mail server, so the code is shown here. The real app emails it and never shows it on screen. Your code is'
+            : 'Testing mode (DEV_SHOW_OTP is on): your code is'}{' '}
           <b className="tabular font-semibold tracking-widest">{devCode}</b>
         </p>
       )}

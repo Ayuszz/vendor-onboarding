@@ -11,11 +11,18 @@ const post = (url: string, payload: object, token?: string) =>
   ctx.app.inject({ method: 'POST', url, payload, headers: token ? { authorization: `Bearer ${token}` } : {} });
 const get = (url: string, token: string) => ctx.app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${token}` } });
 
+/** The code exists only in the email that was "sent" — read it from the mailbox. */
+function codeFromInbox(email: string) {
+  const msg = [...ctx.mailer.sent].reverse().find((m) => m.to === email.toLowerCase());
+  return /\b(\d{6})\b/.exec(msg?.text ?? '')?.[1] ?? '';
+}
+
 /** Requests a code and verifies it, returning the session. */
 async function vendorSignIn(email: string) {
   const req = await post('/api/auth/code', { email });
   expect(req.statusCode).toBe(200);
-  const code = req.json().devCode as string;
+  expect(req.json().devCode).toBeUndefined();
+  const code = codeFromInbox(email);
   const ver = await post('/api/auth/code/verify', { email, code });
   expect(ver.statusCode).toBe(200);
   return ver.json() as { token: string; user: { id: string; roles: string[] }; vendorId: string | null };
@@ -93,7 +100,7 @@ describe('vendor sign-in with an email code', () => {
   it('rejects wrong codes, locks after 5 tries, and throttles resends', async () => {
     const email = 'brute@force.test';
     const first = await post('/api/auth/code', { email });
-    const code = first.json().devCode as string;
+    const code = codeFromInbox(email);
     const wrong = code === '000000' ? '111111' : '000000';
     for (let i = 0; i < 5; i++) expect((await post('/api/auth/code/verify', { email, code: wrong })).statusCode).toBe(400);
     expect((await post('/api/auth/code/verify', { email, code })).statusCode).toBe(429);
@@ -102,8 +109,30 @@ describe('vendor sign-in with an email code', () => {
 
   it('a code works only once', async () => {
     const email = 'once@only.test';
-    const code = (await post('/api/auth/code', { email })).json().devCode;
+    await post('/api/auth/code', { email });
+    const code = codeFromInbox(email);
     expect((await post('/api/auth/code/verify', { email, code })).statusCode).toBe(200);
     expect((await post('/api/auth/code/verify', { email, code })).statusCode).toBe(400);
+  });
+});
+
+describe('the code is only delivered by email', () => {
+  it('never appears in the API response, the email subject, or the database', async () => {
+    const email = 'secure@check.test';
+    const r = await post('/api/auth/code', { email });
+    const code = codeFromInbox(email);
+    expect(code).toMatch(/^\d{6}$/);
+    expect(r.body).not.toContain(code);
+    expect(ctx.mailer.sent.at(-1)!.subject).not.toContain(code);
+    const { rows } = await ctx.db.query<{ code_hash: string }>('SELECT code_hash FROM login_codes WHERE email = $1', [email]);
+    expect(rows[0]!.code_hash).not.toContain(code);
+    expect(rows[0]!.code_hash).toHaveLength(64);
+  });
+
+  it("one person's code cannot sign in as another email", async () => {
+    await post('/api/auth/code', { email: 'alice@a.test' });
+    await post('/api/auth/code', { email: 'mallory@m.test' });
+    const malloryCode = codeFromInbox('mallory@m.test');
+    expect((await post('/api/auth/code/verify', { email: 'alice@a.test', code: malloryCode })).statusCode).toBe(400);
   });
 });
