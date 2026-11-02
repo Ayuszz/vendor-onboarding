@@ -30,7 +30,7 @@ Open <http://localhost:5173>. There is one sign-in page with two tabs:
  The database is an embedded Postgres (PGlite) stored in `.data/`, so nothing else needs installing. API docs are at <http://localhost:4000/docs>.
 
 ```bash
-npm test          # 40 tests: workflow engine, validators, full API flows
+npm test          # workflow engine, validators, OCR extractors, sign-in, full API flows
 npm run typecheck
 npm run build
 ```
@@ -59,6 +59,26 @@ apps/web           React 19 + Vite + Tailwind 4 + TanStack Query
   pages/           Overview, queue/list, vendor editor (stepper), vendor detail
   components/      Glass UI kit, document card, journey rail
 ```
+
+## Vendor portal
+
+After signing in, a vendor gets a sidebar with four sections and one main screen:
+
+- **Application:** company details, contact and address, bank details, then review and submit. New vendors start here.
+- **Approval status:** the current stage (QC & SCM review, Finance, SAP, Onboarded), any changes your team has requested, and the activity history. A vendor who hasn't uploaded anything yet is taken to Documents instead.
+- **Documents:** GST, PAN, bank proof, MSME, FSSAI and the other documents that apply to the company. Each document runs the same chain:
+
+  **Upload → Read document → Details filled → Verification**
+
+  1. The vendor chooses a PDF or a photo.
+  2. The text is read in the browser. Digital PDFs use their embedded text layer (instant and exact). Photos and scanned PDFs go through OCR (Tesseract, self-hosted under `/ocr`, so files are never sent to a third party for OCR).
+  3. The fields fill themselves. Each one is marked *From document*, or *Edited* if the vendor changes it.
+  4. After upload, the server verifies everything again on its own: formats, the GSTIN checksum, the PAN inside the GSTIN, bank details against the profile, and expiry dates.
+
+  The OCR result is stored with the document (method, confidence, fields read, fields edited), so reviewers can see which values came from the file and which were typed.
+- **Settings:** account and company details, theme, and sign out.
+
+The field extractors (`packages/shared/src/extract.ts`) look for labels and repair common OCR mix-ups (O↔0, I↔1, S↔5). They accept a value only after it passes validation, so a value that can't be read reliably is left empty rather than guessed.
 
 ## Design decisions
 

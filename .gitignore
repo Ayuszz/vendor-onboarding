@@ -9,3 +9,4 @@ uploads/
 coverage/
 .DS_Store
 dist-demo/
+apps/web/public/ocr/

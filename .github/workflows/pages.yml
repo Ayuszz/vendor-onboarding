@@ -21,15 +21,8 @@ jobs:
       - run: npm run build:demo -w @vo/web
       - name: Assemble site
         run: |
-          mkdir -p _site
-          {
-            echo '<!doctype html><html lang="en"><head><meta charset="utf-8">'
-            echo '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
-            echo '<link rel="icon" href="favicon.svg" type="image/svg+xml"></head><body>'
-            cat apps/web/dist-demo/vendor-onboarding-demo.html
-            echo '</body></html>'
-          } > _site/index.html
-          cp apps/web/public/favicon.svg _site/
+          rm -rf _site && cp -r apps/web/dist-demo _site
+          cp apps/web/public/favicon.svg _site/ 2>/dev/null || true
           touch _site/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with: { path: _site }

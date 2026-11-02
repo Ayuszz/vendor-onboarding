@@ -6,6 +6,7 @@ import {
   STATES,
   actionBodySchema,
   actionParamSchema,
+  ocrMetaSchema,
   otpRequestSchema,
   otpVerifySchema,
   staffLoginSchema,
@@ -208,6 +209,7 @@ export async function buildApp(deps: AppDeps) {
   app.put('/api/vendors/:id/documents/:key', { schema: { tags, params: docParams, consumes: ['multipart/form-data'] } }, async (req) => {
     if (!req.isMultipart()) throw badRequest('Expected multipart/form-data');
     let fields: Record<string, unknown> = {};
+    let ocr: vendors.UploadInput['ocr'];
     let file: vendors.UploadInput['file'];
     for await (const part of req.parts()) {
       if (part.type === 'file') {
@@ -216,6 +218,16 @@ export async function buildApp(deps: AppDeps) {
         const sniffed = sniffFileType(buffer);
         if (!sniffed) throw badRequest('Only PDF, PNG, JPEG or WEBP files are accepted');
         file = { buffer, name: part.filename || `upload${sniffed.ext}`, mime: sniffed.mime, ext: sniffed.ext };
+      } else if (part.fieldname === 'ocr') {
+        const parsed = ocrMetaSchema.safeParse((() => {
+          try {
+            return JSON.parse(String(part.value));
+          } catch {
+            return null;
+          }
+        })());
+        if (!parsed.success) throw badRequest('`ocr` must describe the OCR result');
+        ocr = parsed.data;
       } else if (part.fieldname === 'fields') {
         try {
           const parsed: unknown = JSON.parse(String(part.value));
@@ -226,7 +238,7 @@ export async function buildApp(deps: AppDeps) {
         }
       }
     }
-    return vendors.upsertDocument(deps, req.user, req.params.id, req.params.key, { fields, file });
+    return vendors.upsertDocument(deps, req.user, req.params.id, req.params.key, { fields, file, ocr });
   });
 
   app.delete('/api/vendors/:id/documents/:key', { schema: { tags, params: docParams } }, async (req) =>

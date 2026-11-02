@@ -18,7 +18,7 @@ import { useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { DocumentCard } from '../components/DocumentCard';
 import { Journey } from '../components/Journey';
-import { Avatar, Button, Dialog, Empty, Panel, PanelHeader, Skeleton, StatePill, useToast } from '../components/ui';
+import { Avatar, Button, Dialog, Empty, Panel, PanelHeader, Pill, Skeleton, StatePill, useToast } from '../components/ui';
 import { ApiError, api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { dateTime, timeAgo } from '../lib/format';
@@ -60,8 +60,9 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-export default function VendorDetail() {
-  const { id } = useParams() as { id: string };
+export default function VendorDetail({ vendorId }: { vendorId?: string } = {}) {
+  const params = useParams();
+  const id = vendorId ?? params.id!;
   const { user, isVendor } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -138,7 +139,7 @@ export default function VendorDetail() {
             </p>
           </div>
           {editable && can('submit') && (
-            <Button variant="secondary" size="sm" icon={<Pencil className="size-3.5" />} onClick={() => navigate(`/vendors/${id}/edit`)}>
+            <Button variant="secondary" size="sm" icon={<Pencil className="size-3.5" />} onClick={() => navigate(isVendor ? '/application' : `/vendors/${id}/edit`)}>
               Edit
             </Button>
           )}
@@ -173,7 +174,7 @@ export default function VendorDetail() {
         )}
       </Panel>
 
-      <div className={clsx('grid gap-5', !isVendor && 'xl:grid-cols-[minmax(0,1fr)_360px]')}>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-5">
           <Panel>
             <PanelHeader title="Vendor details" />
@@ -210,15 +211,43 @@ export default function VendorDetail() {
               title="Documents"
               description={`${v.documents.filter((d) => d.status === 'VERIFIED').length} of ${docs.length} verified`}
             />
-            <div className="space-y-3 px-3 pb-3 sm:px-4 sm:pb-4">
-              {docs.map(({ doc, requirement }) => (
-                <DocumentCard key={doc.key} vendor={v} type={doc} requirement={requirement} editable={false} />
-              ))}
-            </div>
+            {isVendor ? (
+              // Vendors manage documents on their Documents page; here they get a summary.
+              <ul className="px-5 pb-5 sm:px-6">
+                {docs.map(({ doc }) => {
+                  const d = v.documents.find((x) => x.key === doc.key);
+                  return (
+                    <li key={doc.key} className="hairline flex items-center justify-between gap-3 border-b py-2.5 text-[14px] last:border-0">
+                      <span>{doc.label}</span>
+                      {!d ? (
+                        <Pill>Not uploaded</Pill>
+                      ) : d.status === 'VERIFIED' ? (
+                        <Pill tone="success" dot>Verified</Pill>
+                      ) : d.status === 'PENDING' ? (
+                        <Pill tone="info" dot>Verifying</Pill>
+                      ) : (
+                        <Pill tone="danger" dot>Needs attention</Pill>
+                      )}
+                    </li>
+                  );
+                })}
+                <li className="pt-3">
+                  <Button size="sm" onClick={() => navigate('/documents')}>
+                    Open documents
+                  </Button>
+                </li>
+              </ul>
+            ) : (
+              <div className="space-y-3 px-3 pb-3 sm:px-4 sm:pb-4">
+                {docs.map(({ doc, requirement }) => (
+                  <DocumentCard key={doc.key} vendor={v} type={doc} requirement={requirement} editable={false} />
+                ))}
+              </div>
+            )}
           </Panel>
         </div>
 
-        <Panel as="aside" className={clsx('self-start', !isVendor && 'xl:sticky xl:top-5')}>
+        <Panel as="aside" className="self-start xl:sticky xl:top-5">
           <PanelHeader title="Activity" />
           <ol className="relative px-5 pb-5 sm:px-6">
             {events.isPending && <Skeleton className="h-40" />}
@@ -253,7 +282,7 @@ export default function VendorDetail() {
 
       {/* Action dock — floating glass bar with exactly the actions this person may take now. */}
       {hasDock && (
-        <div className={clsx('fixed inset-x-0 z-30 flex justify-center px-3', isVendor ? 'bottom-6' : 'bottom-20 lg:bottom-6 lg:pl-[268px]')}>
+        <div className={clsx('fixed inset-x-0 bottom-20 z-30 flex justify-center px-3 lg:bottom-6', isVendor ? 'lg:pl-[284px]' : 'lg:pl-[268px]')}>
           <div className="glass-strong animate-rise flex max-w-full items-center gap-2 overflow-x-auto rounded-full p-2 pl-5">
             <span className="hidden text-[13px] whitespace-nowrap text-ink-2 sm:inline">
               {actingAs ? `Reviewing as ${ROLE_LABELS[actingAs]}` : v.state === 'SAP_ERROR' ? 'SAP sync failed' : STATE_META[v.state].label}
@@ -279,7 +308,20 @@ export default function VendorDetail() {
               </Button>
             )}
             {editable && can('submit') && (
-              <Button variant="primary" onClick={() => navigate(`/vendors/${id}/edit?step=${v.blockers.length ? 3 : 4}`)}>
+              <Button
+                variant="primary"
+                onClick={() =>
+                  navigate(
+                    isVendor
+                      ? v.blockers.some((b) => b.startsWith('Complete profile'))
+                        ? '/application'
+                        : v.blockers.length
+                          ? '/documents'
+                          : '/application?step=3'
+                      : `/vendors/${id}/edit?step=${v.blockers.length ? 3 : 4}`,
+                  )
+                }
+              >
                 {v.state === 'SENT_BACK' ? 'Make changes' : v.blockers.length ? (isVendor ? 'Continue application' : 'Continue editing') : 'Review and submit'}
               </Button>
             )}

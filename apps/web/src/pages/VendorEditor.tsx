@@ -23,19 +23,27 @@ import { Button, Field, Input, Panel, Select, Skeleton, Toggle, useToast } from 
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
-const STEPS = ['Company', 'Contact & address', 'Bank', 'Documents', 'Review'] as const;
+type StepKey = 'company' | 'contact' | 'bank' | 'documents' | 'review';
+const STAFF_STEPS: { key: StepKey; label: string }[] = [
+  { key: 'company', label: 'Company' },
+  { key: 'contact', label: 'Contact & address' },
+  { key: 'bank', label: 'Bank' },
+  { key: 'documents', label: 'Documents' },
+  { key: 'review', label: 'Review' },
+];
+/** Vendors manage documents on their own Documents page, so their application has no documents step. */
+const VENDOR_STEPS = STAFF_STEPS.filter((s) => s.key !== 'documents');
+const SAVED_STEPS: StepKey[] = ['company', 'contact', 'bank'];
 
 const companySchema = vendorProfileSchema.pick({ legalName: true, constitution: true, category: true });
-const stepSchemas: (z.ZodType | null)[] = [
-  companySchema,
-  z.object({ contact: contactSchema, address: addressSchema }),
-  z.object({ bank: bankSchema }),
-  null,
-  null,
-];
+const stepSchemas: Partial<Record<StepKey, z.ZodType>> = {
+  company: companySchema,
+  contact: z.object({ contact: contactSchema, address: addressSchema }),
+  bank: z.object({ bank: bankSchema }),
+};
 
 type Errors = Record<string, string>;
-function validate(step: number, form: VendorDraft): Errors {
+function validate(step: StepKey, form: VendorDraft): Errors {
   const schema = stepSchemas[step];
   if (!schema) return {};
   const r = schema.safeParse(form);
@@ -46,13 +54,17 @@ function validate(step: number, form: VendorDraft): Errors {
 }
 
 export default function VendorEditor() {
-  const { id } = useParams();
+  const { id: routeId } = useParams();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
   const { isVendor, vendorId: myVendorId, refresh, user } = useAuth();
+  // Vendors always edit their own single application; staff edit the one in the URL.
+  const id = isVendor ? (myVendorId ?? undefined) : routeId;
+  const STEPS = isVendor ? VENDOR_STEPS : STAFF_STEPS;
   const step = Math.min(Math.max(Number(params.get('step') ?? 0), 0), STEPS.length - 1);
+  const key = STEPS[step]!.key;
 
   const vendor = useQuery({
     queryKey: ['vendor', id],
@@ -88,7 +100,6 @@ export default function VendorEditor() {
       qc.setQueryData(['vendor', v.id], v);
       qc.invalidateQueries({ queryKey: ['vendors'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
-      if (isVendor && !id) void refresh();
     },
   });
 
@@ -99,24 +110,25 @@ export default function VendorEditor() {
       qc.invalidateQueries({ queryKey: ['vendors'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
       toast(isVendor ? 'Application submitted' : 'Submitted for QC and SCM review');
-      navigate(`/vendors/${v.id}`);
+      navigate(isVendor ? '/status' : `/vendors/${v.id}`);
     },
     onError: (e) => toast(e.message, 'danger'),
   });
 
   const goTo = (s: number, vid = id) => {
-    if (vid && vid !== id) navigate(`/vendors/${vid}/edit?step=${s}`, { replace: true });
+    if (!isVendor && vid && vid !== id) navigate(`/vendors/${vid}/edit?step=${s}`, { replace: true });
     else setParams({ step: String(s) }, { replace: true });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const next = async () => {
-    const errs = validate(step, form);
+    const errs = validate(key, form);
     setErrors(errs);
     if (Object.keys(errs).length) return;
-    if (step <= 2) {
+    if (SAVED_STEPS.includes(key)) {
       try {
         const v = await save.mutateAsync();
+        if (isVendor && !id) await refresh(); // picks up the new application id
         goTo(step + 1, v.id);
       } catch (e) {
         toast((e as Error).message, 'danger');
@@ -131,21 +143,16 @@ export default function VendorEditor() {
   const docs = useMemo(() => applicableDocuments(form), [form]);
   const bank = form.bank?.ifsc ? resolveBank(form.bank.ifsc) : null;
 
-  // A vendor who already has an application never starts a second one.
-  if (isVendor && !id && myVendorId) {
-    navigate(`/vendors/${myVendorId}/edit`, { replace: true });
-    return null;
-  }
   if (id && vendor.isPending) return <Skeleton className="h-96 w-full" />;
   if (id && vendor.data && !editable) {
-    navigate(`/vendors/${id}`, { replace: true });
+    navigate(isVendor ? '/status' : `/vendors/${id}`, { replace: true });
     return null;
   }
 
   return (
     <div className="mx-auto max-w-[880px] space-y-5">
       <header className="flex items-center gap-3 px-1 pt-2">
-        {(id || !isVendor) && (
+        {!isVendor && (
           <Button variant="ghost" size="sm" className="!px-2" aria-label="Back" onClick={() => navigate(id ? `/vendors/${id}` : '/')}>
             <ChevronLeft className="size-5" />
           </Button>
@@ -173,7 +180,7 @@ export default function VendorEditor() {
       {/* Stepper — a real sequence, so numbered. */}
       <nav aria-label="Steps" className="glass rounded-full p-1.5">
         <ol className="flex">
-          {STEPS.map((label, i) => {
+          {STEPS.map(({ label }, i) => {
             const reachable = i === 0 || !!id;
             const done = i < step;
             return (
@@ -207,7 +214,7 @@ export default function VendorEditor() {
 
       <Panel className="p-5 sm:p-7" key={step}>
         <div className="animate-rise">
-          {step === 0 && (
+          {key === 'company' && (
             <div className="grid gap-5 sm:grid-cols-2">
               <Field label="Legal name" hint="Exactly as it appears on the GST certificate" error={errors.legalName} className="sm:col-span-2">
                 {(fid, d) => (
@@ -250,7 +257,7 @@ export default function VendorEditor() {
             </div>
           )}
 
-          {step === 1 && (
+          {key === 'contact' && (
             <div className="space-y-7">
               <fieldset className="grid gap-5 sm:grid-cols-3">
                 <legend className="mb-4 text-[17px] font-semibold">Primary contact</legend>
@@ -297,7 +304,7 @@ export default function VendorEditor() {
             </div>
           )}
 
-          {step === 2 && (
+          {key === 'bank' && (
             <div className="grid gap-5 sm:grid-cols-2">
               <Field label="Account holder name" error={errors['bank.accountHolder']} className="sm:col-span-2">
                 {(fid) => <Input id={fid} value={form.bank?.accountHolder ?? ''} onChange={(e) => setIn('bank', 'accountHolder', e.target.value)} aria-invalid={!!errors['bank.accountHolder']} />}
@@ -315,12 +322,12 @@ export default function VendorEditor() {
                 )}
               </Field>
               <p className="text-[13px] text-ink-2 sm:col-span-2">
-                These must match the cancelled cheque or bank letter you upload in the next step.
+                These must match the cancelled cheque or bank letter you upload {isVendor ? 'on the Documents page' : 'in the next step'}.
               </p>
             </div>
           )}
 
-          {step === 3 && vendor.data && (
+          {key === 'documents' && vendor.data && (
             <div className="space-y-3">
               <p className="text-[14px] text-ink-2">
                 Each document is checked automatically after upload — formats, checksums and that numbers match each other and your profile.
@@ -348,7 +355,7 @@ export default function VendorEditor() {
             </div>
           )}
 
-          {step === 4 && vendor.data && (
+          {key === 'review' && vendor.data && (
             <div>
               {vendor.data.blockers.length === 0 ? (
                 <div className="flex flex-col items-center py-6 text-center">
@@ -370,6 +377,11 @@ export default function VendorEditor() {
                       </li>
                     ))}
                   </ul>
+                  {isVendor && vendor.data.blockers.some((x) => !x.startsWith('Complete profile')) && (
+                    <Button className="mt-4" variant="primary" onClick={() => navigate('/documents')}>
+                      Go to documents
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
@@ -383,7 +395,7 @@ export default function VendorEditor() {
         </Button>
         {step < STEPS.length - 1 ? (
           <Button variant="primary" size="lg" loading={save.isPending} onClick={next}>
-            {step <= 2 ? 'Save and continue' : 'Continue'}
+            {SAVED_STEPS.includes(key) ? 'Save and continue' : 'Continue'}
           </Button>
         ) : (
           <Button
@@ -397,7 +409,7 @@ export default function VendorEditor() {
           </Button>
         )}
       </div>
-      {id && (
+      {id && !isVendor && (
         <p className="text-center text-[13px] text-ink-3">
           <Link to={`/vendors/${id}`} className="focus-ring rounded hover:text-ink-2">
             View activity for this vendor

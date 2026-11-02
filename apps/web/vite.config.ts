@@ -5,6 +5,8 @@ import { defineConfig } from 'vite';
 const demo = process.env.VITE_DEMO === '1';
 
 export default defineConfig({
+  // The demo is served from a sub-path (GitHub Pages), so it uses relative asset URLs.
+  base: demo ? './' : '/',
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
@@ -13,7 +15,6 @@ export default defineConfig({
   build: {
     target: 'es2022',
     sourcemap: !demo,
-    // The demo ships as one self-contained file, so code-splitting is turned off for it.
-    ...(demo ? { outDir: 'dist-demo', assetsInlineLimit: 1e9, rollupOptions: { output: { inlineDynamicImports: true } } } : {}),
+    ...(demo ? { outDir: 'dist-demo' } : {}),
   },
 });

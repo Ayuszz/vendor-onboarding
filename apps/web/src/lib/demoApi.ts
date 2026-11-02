@@ -23,6 +23,7 @@ import {
   type DocumentDTO,
   type DocumentKey,
   type EventDTO,
+  type OcrMeta,
   type OtpRequestResult,
   type SessionDTO,
   type Paged,
@@ -224,7 +225,16 @@ function create(u: UserDTO, draft: VendorDraft) {
   return v;
 }
 
-function upload(u: UserDTO, v: Vendor, key: DocumentKey, input: Record<string, unknown>, file: Blob | null, name: string | null, delay: number) {
+function upload(
+  u: UserDTO,
+  v: Vendor,
+  key: DocumentKey,
+  input: Record<string, unknown>,
+  file: Blob | null,
+  name: string | null,
+  delay: number,
+  ocr: OcrMeta | null = null,
+) {
   if (!canEdit(u, v)) throw new DemoError(403, 'FORBIDDEN', 'Documents can only be changed while the vendor is a draft');
   if (DOCUMENTS[key].requirement(v.profile) === 'hidden')
     throw new DemoError(422, 'DOCUMENT_NOT_APPLICABLE', `${DOCUMENTS[key].label} does not apply to this vendor`);
@@ -237,6 +247,7 @@ function upload(u: UserDTO, v: Vendor, key: DocumentKey, input: Record<string, u
     reasons: [],
     derived: {},
     file: file ? { name: name ?? 'file.pdf', size: file.size, mimeType: file.type || 'application/pdf' } : (existing?.file ?? null),
+    ocr: file ? ocr : (existing?.ocr ?? null),
     uploadedAt: now(),
     verifiedAt: null,
     revision: (existing?.revision ?? 0) + 1,
@@ -344,9 +355,9 @@ function seed() {
       bank: { accountHolder: name, accountNumber: '50100234567812', ifsc },
     });
     const g = `${st}${pan}1Z`;
-    upload(R, v, 'pan', { pan, nameOnPan: name }, pdf, 'pan.pdf', 0);
-    upload(R, v, 'gst', { gstin: g + gstinCheckChar(g), legalName: name }, pdf, 'gst-certificate.pdf', 0);
-    upload(R, v, 'bank_proof', { ifsc, accountNumber: '50100234567812' }, pdf, 'cancelled-cheque.pdf', 0);
+    upload(R, v, 'pan', { pan, nameOnPan: name }, pdf, 'pan.pdf', 0, { method: 'ocr', confidence: 91, found: ['pan', 'nameOnPan'], edited: [], ms: 2100 });
+    upload(R, v, 'gst', { gstin: g + gstinCheckChar(g), legalName: name }, pdf, 'gst-certificate.pdf', 0, { method: 'pdf-text', confidence: 100, found: ['gstin', 'legalName'], edited: [], ms: 240 });
+    upload(R, v, 'bank_proof', { ifsc, accountNumber: '50100234567812' }, pdf, 'cancelled-cheque.pdf', 0, { method: 'ocr', confidence: 84, found: ['ifsc', 'accountNumber'], edited: [], ms: 1900 });
     upload(R, v, 'moa_aoa', { cin: `U25209MH2015PTC1234${String(i).padStart(2, '0')}` }, pdf, 'moa-aoa.pdf', 0);
     if (food) upload(R, v, 'fssai', { licenseNumber: '11521998000123', expiryDate: '2029-03-31' }, pdf, 'fssai.pdf', 0);
     return v;
@@ -484,13 +495,13 @@ export const demoApi = {
       act(u, v, action, body, VERIFY_MS);
       return toDTO(v, u);
     }),
-  upload: (id: string, key: DocumentKey, fields: Record<string, string>, file?: File) =>
+  upload: (id: string, key: DocumentKey, fields: Record<string, string>, file?: File, ocr?: OcrMeta) =>
     wrap(() => {
       const u = me();
       const v = find(id, u);
       if (file && !/^(application\/pdf|image\/(png|jpeg|webp))$/.test(file.type))
         throw new DemoError(400, 'BAD_REQUEST', 'Only PDF, PNG, JPEG or WEBP files are accepted');
-      upload(u, v, key, fields, file ?? null, file?.name ?? null, VERIFY_MS);
+      upload(u, v, key, fields, file ?? null, file?.name ?? null, VERIFY_MS, ocr ?? null);
       return toDTO(v, u);
     }),
   removeDoc: (id: string, key: DocumentKey) =>

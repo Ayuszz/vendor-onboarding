@@ -126,6 +126,14 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    id: 3,
+    name: 'document_ocr',
+    sql: /* sql */ `
+      -- What OCR read from each uploaded file: method, confidence, fields filled, fields edited.
+      ALTER TABLE vendor_documents ADD COLUMN ocr jsonb;
+    `,
+  },
 ];
 
 export async function migrate(db: Db): Promise<number[]> {

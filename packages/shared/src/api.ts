@@ -33,6 +33,18 @@ export interface OtpRequestResult {
   devCode?: string;
 }
 
+/** What OCR read from the file before upload (sent by the browser, stored for reviewers). */
+export const ocrMetaSchema = z.object({
+  method: z.enum(['pdf-text', 'ocr', 'none']),
+  confidence: z.number().min(0).max(100),
+  /** Field keys that were filled from the document. */
+  found: z.array(z.string().max(40)).max(20),
+  /** Field keys the person changed after they were filled from the document. */
+  edited: z.array(z.string().max(40)).max(20).default([]),
+  ms: z.number().int().min(0).max(600_000).default(0),
+});
+export type OcrMeta = z.infer<typeof ocrMetaSchema>;
+
 export interface DocumentDTO {
   key: DocumentKey;
   status: DocStatus;
@@ -40,6 +52,7 @@ export interface DocumentDTO {
   reasons: string[];
   derived: Record<string, string>;
   file: { name: string; size: number; mimeType: string } | null;
+  ocr: OcrMeta | null;
   uploadedAt: string;
   verifiedAt: string | null;
 }

@@ -15,6 +15,7 @@ import {
   type DocStatus,
   type DocumentDTO,
   type DocumentKey,
+  type OcrMeta,
   type EventDTO,
   type Paged,
   type Role,
@@ -62,6 +63,7 @@ interface DocRow {
   file_name: string | null;
   file_size: number | null;
   mime_type: string | null;
+  ocr: OcrMeta | null;
   revision: number;
   uploaded_at: Date | string;
   verified_at: Date | string | null;
@@ -93,7 +95,7 @@ async function loadVendor(q: Queryable, id: string, lock = false): Promise<Vendo
 
 async function loadDocs(q: Queryable, vendorId: string): Promise<DocRow[]> {
   const { rows } = await q.query<DocRow>(
-    `SELECT doc_key, status, fields, reasons, derived, file_key, file_name, file_size, mime_type,
+    `SELECT doc_key, status, fields, reasons, derived, file_key, file_name, file_size, mime_type, ocr,
             revision, uploaded_at, verified_at
      FROM vendor_documents WHERE vendor_id = $1`,
     [vendorId],
@@ -114,6 +116,7 @@ function toDocDTO(d: DocRow): DocumentDTO {
     reasons: d.reasons,
     derived: d.derived,
     file: d.file_key ? { name: d.file_name ?? 'file', size: d.file_size ?? 0, mimeType: d.mime_type ?? '' } : null,
+    ocr: d.ocr,
     uploadedAt: iso(d.uploaded_at)!,
     verifiedAt: iso(d.verified_at),
   };
@@ -383,6 +386,7 @@ async function requeueVerification(tx: Queryable, vendorId: string, key: Documen
 
 export interface UploadInput {
   fields: Record<string, unknown>;
+  ocr?: OcrMeta | undefined;
   file?: { buffer: Buffer; name: string; mime: string; ext: string } | undefined;
 }
 
@@ -390,6 +394,10 @@ export async function upsertDocument(deps: Deps, user: UserDTO, id: string, key:
   if (!(DOCUMENT_KEYS as readonly string[]).includes(key)) throw badRequest(`Unknown document type "${key}"`);
   const docKey = key as DocumentKey;
   const fields = sanitizeDocFields(docKey, input.fields);
+  const fieldKeys = new Set(DOCUMENTS[docKey].fields.map((f) => f.key));
+  const ocr = input.ocr
+    ? { ...input.ocr, found: input.ocr.found.filter((k) => fieldKeys.has(k)), edited: input.ocr.edited.filter((k) => fieldKeys.has(k)) }
+    : null;
 
   // Store the file before the transaction (I/O outside the lock); clean up if the TX fails.
   const stored = input.file ? await deps.storage.put(input.file.buffer, input.file.ext) : null;
@@ -411,8 +419,8 @@ export async function upsertDocument(deps: Deps, user: UserDTO, id: string, key:
 
       const { rows } = await tx.query<{ revision: number }>(
         `INSERT INTO vendor_documents
-           (vendor_id, doc_key, status, fields, reasons, derived, file_key, file_name, file_size, mime_type, sha256)
-         VALUES ($1, $2, 'PENDING', $3, '[]', '{}', $4, $5, $6, $7, $8)
+           (vendor_id, doc_key, status, fields, reasons, derived, file_key, file_name, file_size, mime_type, sha256, ocr)
+         VALUES ($1, $2, 'PENDING', $3, '[]', '{}', $4, $5, $6, $7, $8, $9)
          ON CONFLICT (vendor_id, doc_key) DO UPDATE SET
            status = 'PENDING', fields = EXCLUDED.fields, reasons = '[]', derived = '{}',
            file_key = coalesce(EXCLUDED.file_key, vendor_documents.file_key),
@@ -420,6 +428,7 @@ export async function upsertDocument(deps: Deps, user: UserDTO, id: string, key:
            file_size = coalesce(EXCLUDED.file_size, vendor_documents.file_size),
            mime_type = coalesce(EXCLUDED.mime_type, vendor_documents.mime_type),
            sha256 = coalesce(EXCLUDED.sha256, vendor_documents.sha256),
+           ocr = CASE WHEN EXCLUDED.file_key IS NOT NULL THEN EXCLUDED.ocr ELSE vendor_documents.ocr END,
            revision = vendor_documents.revision + 1, uploaded_at = now(), verified_at = NULL
          RETURNING revision`,
         [
@@ -431,6 +440,7 @@ export async function upsertDocument(deps: Deps, user: UserDTO, id: string, key:
           input.file?.buffer.length ?? null,
           input.file?.mime ?? null,
           stored?.sha256 ?? null,
+          ocr ? JSON.stringify(ocr) : null,
         ],
       );
       await enqueue(tx, 'verify_document', { vendorId: id, docKey, revision: rows[0]!.revision }, {
@@ -445,7 +455,7 @@ export async function upsertDocument(deps: Deps, user: UserDTO, id: string, key:
         action: 'document_uploaded',
         actor: user,
         role: user.roles.includes('VENDOR') ? 'VENDOR' : 'REQUESTER',
-        detail: { document: docKey, file: input.file?.name ?? null },
+        detail: { document: docKey, file: input.file?.name ?? null, ...(ocr ? { ocr } : {}) },
       });
     });
   } catch (err) {

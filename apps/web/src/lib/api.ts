@@ -2,6 +2,7 @@ import type {
   ActionBody,
   DocumentKey,
   EventDTO,
+  OcrMeta,
   OtpRequestResult,
   SessionDTO,
   Paged,
@@ -96,9 +97,10 @@ const httpApi = {
     request<VendorDTO>(`/vendors/${id}`, { method: 'PATCH', body: JSON.stringify({ profile, version }) }),
   act: (id: string, action: UserAction, body: ActionBody) =>
     request<VendorDTO>(`/vendors/${id}/actions/${action}`, { method: 'POST', body: JSON.stringify(body) }),
-  upload: (id: string, key: DocumentKey, fields: Record<string, string>, file?: File) => {
+  upload: (id: string, key: DocumentKey, fields: Record<string, string>, file?: File, ocr?: OcrMeta) => {
     const fd = new FormData();
     fd.append('fields', JSON.stringify(fields));
+    if (ocr) fd.append('ocr', JSON.stringify(ocr));
     if (file) fd.append('file', file);
     return request<VendorDTO>(`/vendors/${id}/documents/${key}`, { method: 'PUT', body: fd });
   },

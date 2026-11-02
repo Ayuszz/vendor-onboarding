@@ -88,11 +88,17 @@ export const validDocs: Record<string, Record<string, string>> = {
 };
 
 /** Builds a multipart/form-data body for app.inject. */
-export function multipart(fields: Record<string, unknown>, file?: { name: string; data: Buffer; type?: string }) {
+export function multipart(
+  fields: Record<string, unknown>,
+  file?: { name: string; data: Buffer; type?: string },
+  extra: Record<string, unknown> = {},
+) {
   const boundary = '----vo' + Math.random().toString(16).slice(2);
   const chunks: Buffer[] = [];
   const push = (s: string) => chunks.push(Buffer.from(s));
   push(`--${boundary}\r\nContent-Disposition: form-data; name="fields"\r\n\r\n${JSON.stringify(fields)}\r\n`);
+  for (const [k, v] of Object.entries(extra))
+    push(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${JSON.stringify(v)}\r\n`);
   if (file) {
     push(
       `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${file.name}"\r\nContent-Type: ${file.type ?? 'application/pdf'}\r\n\r\n`,

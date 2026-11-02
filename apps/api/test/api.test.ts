@@ -232,3 +232,40 @@ describe('listing, inbox and stats', () => {
     expect(r.rawPayload.equals(PDF)).toBe(true);
   });
 });
+
+describe('OCR chain on documents', () => {
+  it('stores what OCR read and which fields the person edited, for reviewers', async () => {
+    const created = await call('requester', 'POST', '/api/vendors', { profile: completeProfile });
+    const mp = multipart(validDocs.pan!, { name: 'pan.pdf', data: PDF }, {
+      ocr: { method: 'ocr', confidence: 87, found: ['pan', 'nameOnPan', 'bogus'], edited: ['nameOnPan'], ms: 1200 },
+    });
+    const r = await ctx.app.inject({
+      method: 'PUT',
+      url: `/api/vendors/${created.body.id}/documents/pan`,
+      headers: { authorization: `Bearer ${ctx.tokens.requester}`, ...mp.headers },
+      payload: mp.payload,
+    });
+    expect(r.statusCode).toBe(200);
+    await ctx.app.worker.drain();
+    const v = await call('qc', 'GET', `/api/vendors/${created.body.id}`);
+    const pan = v.body.documents.find((d: any) => d.key === 'pan');
+    expect(pan.ocr).toEqual({ method: 'ocr', confidence: 87, found: ['pan', 'nameOnPan'], edited: ['nameOnPan'], ms: 1200 });
+    expect(pan.status).toBe('VERIFIED');
+
+    const events = await call('qc', 'GET', `/api/vendors/${created.body.id}/events`);
+    const up = events.body.find((e: any) => e.action === 'document_uploaded');
+    expect(up.detail.ocr.found).toEqual(['pan', 'nameOnPan']);
+  });
+
+  it('rejects a malformed OCR description', async () => {
+    const created = await call('requester', 'POST', '/api/vendors', { profile: completeProfile });
+    const mp = multipart(validDocs.pan!, { name: 'pan.pdf', data: PDF }, { ocr: { method: 'magic', confidence: 500 } });
+    const r = await ctx.app.inject({
+      method: 'PUT',
+      url: `/api/vendors/${created.body.id}/documents/pan`,
+      headers: { authorization: `Bearer ${ctx.tokens.requester}`, ...mp.headers },
+      payload: mp.payload,
+    });
+    expect(r.statusCode).toBe(400);
+  });
+});
