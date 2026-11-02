@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jarvis</title>
+<style>
+:root{--bg:#07090f;--glass:rgba(255,255,255,.06);--line:rgba(255,255,255,.12);--ink:#eef2ff;--mute:#8b94ad;--acc:#5ac8fa;--you:#1c2a44}
+*{box-sizing:border-box}
+body{margin:0;min-height:100dvh;background:radial-gradient(1200px 700px at 50% -10%,#16264a 0,var(--bg) 60%);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;align-items:center}
+main{width:100%;max-width:720px;flex:1;display:flex;flex-direction:column;padding:16px}
+header{display:flex;justify-content:space-between;align-items:center;padding:4px 2px}
+h1{font-size:18px;font-weight:600;letter-spacing:.3px;margin:0}
+button{font:inherit;color:inherit;cursor:pointer}
+.ghost{background:var(--glass);border:1px solid var(--line);border-radius:10px;padding:6px 12px;backdrop-filter:blur(12px)}
+.orbwrap{display:grid;place-items:center;padding:22px 0 10px}
+#orb{width:120px;height:120px;border-radius:50%;border:0;background:radial-gradient(circle at 35% 30%,#bfe9ff,var(--acc) 45%,#1a5fb4);box-shadow:0 0 50px rgba(90,200,250,.45);transition:transform .2s,box-shadow .2s}
+#orb.listening{animation:pulse 1.2s infinite}
+#orb.thinking{animation:spin 1.4s linear infinite;filter:hue-rotate(40deg)}
+#orb.speaking{animation:pulse .6s infinite;filter:hue-rotate(-30deg)}
+@keyframes pulse{50%{transform:scale(1.08);box-shadow:0 0 80px rgba(90,200,250,.7)}}
+@keyframes spin{to{transform:rotate(360deg) scale(1.03)}}
+#status{text-align:center;color:var(--mute);font-size:13px;min-height:20px}
+#log{flex:1;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:14px 2px}
+.m{max-width:85%;padding:10px 14px;border-radius:16px;border:1px solid var(--line);background:var(--glass);backdrop-filter:blur(14px);white-space:pre-wrap;word-wrap:break-word}
+.m.you{align-self:flex-end;background:var(--you)}
+.m.tool{align-self:center;font-size:12px;color:var(--mute);background:none;border:1px dashed var(--line)}
+form{display:flex;gap:8px;padding:8px 0 16px}
+input[type=text],input[type=password]{flex:1;background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:12px 14px;color:var(--ink);font:inherit;outline:none}
+input:focus{border-color:var(--acc)}
+.send{background:var(--acc);color:#04121f;border:0;border-radius:12px;padding:0 18px;font-weight:600}
+dialog{background:#10162a;color:var(--ink);border:1px solid var(--line);border-radius:16px;max-width:460px;width:92%}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+label{display:flex;gap:8px;align-items:center;margin:10px 0;color:var(--mute)}
+small{color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Jarvis</h1><button class="ghost" id="cfg">Settings</button></header>
+  <div class="orbwrap"><button id="orb" aria-label="Talk to Jarvis"></button></div>
+  <div id="status">Tap the orb to talk, or type below.</div>
+  <div id="log" aria-live="polite"></div>
+  <form id="f"><input type="text" id="t" placeholder="Ask Jarvis anything…" autocomplete="off"><button class="send">Send</button></form>
+</main>
+
+<dialog id="dlg">
+  <h3 style="margin-top:0">Settings</h3>
+  <p><small>Your Claude API key is kept only in this browser and sent only to Anthropic. Use a key with a spending limit. Anyone with access to this browser could read it.</small></p>
+  <input type="password" id="key" placeholder="sk-ant-…" style="width:100%">
+  <label>Model <input type="text" id="model" style="flex:1"></label>
+  <label><input type="checkbox" id="wake"> Always listening: say “Jarvis, …” (Chrome / Edge)</label>
+  <label><input type="checkbox" id="speak" checked> Speak replies aloud</label>
+  <div style="display:flex;gap:8px;justify-content:space-between;margin-top:14px">
+    <button class="ghost" id="clr">Clear memory & notes</button>
+    <button class="send" id="save" style="padding:8px 18px">Save</button>
+  </div>
+</dialog>
+
+<script>
+const $=s=>document.querySelector(s);
+const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
+const S={key:store.get('key',''),model:store.get('model','claude-sonnet-5-5'),wake:store.get('wake',false),speak:store.get('speak',true)};
+let history=[],busy=false;
+
+/* ---------- UI helpers ---------- */
+const orb=$('#orb'),log=$('#log'),statusEl=$('#status');
+const setState=(c,t)=>{orb.className=c||'';statusEl.textContent=t||''};
+function add(cls,text){const d=document.createElement('div');d.className='m '+cls;d.textContent=text;log.append(d);log.scrollTop=log.scrollHeight;return d}
+
+/* ---------- Memory, notes, timers (browser storage) ---------- */
+const mem=()=>store.get('memory',[]),notes=()=>store.get('notes',[]);
+const timers=[];
+function startTimer(sec,label){
+  const id=setTimeout(()=>{const m=`Timer done: ${label||sec+' seconds'}`;add('tool',m);say(m);try{new Notification('Jarvis',{body:m})}catch{}},sec*1000);
+  timers.push(id);return `Timer set for ${sec} seconds${label?` (${label})`:''}.`;
+}
+/* ---------- Tools the model can call ---------- */
+const TOOLS=[
+ {name:'get_time',description:'Get the current local date and time.',input_schema:{type:'object',properties:{}}},
+ {name:'calculate',description:'Evaluate a math expression, e.g. "(12*7)/3". Only numbers and + - * / % ( ) . ^ allowed.',input_schema:{type:'object',properties:{expression:{type:'string'}},required:['expression']}},
+ {name:'set_timer',description:'Start a countdown timer that alerts the user.',input_schema:{type:'object',properties:{seconds:{type:'number'},label:{type:'string'}},required:['seconds']}},
+ {name:'remember',description:'Save a lasting fact or preference about the user for future conversations.',input_schema:{type:'object',properties:{fact:{type:'string'}},required:['fact']}},
+ {name:'add_note',description:'Save a note or to-do item.',input_schema:{type:'object',properties:{text:{type:'string'}},required:['text']}},
+ {name:'list_notes',description:'List all saved notes.',input_schema:{type:'object',properties:{}}},
+ {name:'open_url',description:'Open a website in a new tab. The user is asked to confirm first.',input_schema:{type:'object',properties:{url:{type:'string'}},required:['url']}},
+];
+const RUN={
+ get_time:()=>new Date().toLocaleString('en-IN',{dateStyle:'full',timeStyle:'medium'}),
+ calculate:({expression})=>{
+   if(!/^[0-9+\-*/%().^\s]+$/.test(expression))return 'Error: unsupported characters';
+   try{const v=Function('"use strict";return ('+expression.replace(/\^/g,'**')+')')();return String(v)}catch(e){return 'Error: '+e.message}},
+ set_timer:({seconds,label})=>seconds>0&&seconds<=86400?startTimer(seconds,label):'Error: seconds must be 1–86400',
+ remember:({fact})=>{const m=mem();m.push(fact);store.set('memory',m.slice(-100));return 'Remembered.'},
+ add_note:({text})=>{const n=notes();n.push({text,at:new Date().toISOString()});store.set('notes',n);return 'Note saved.'},
+ list_notes:()=>notes().map((n,i)=>`${i+1}. ${n.text}`).join('\n')||'No notes yet.',
+ open_url:({url})=>{let u;try{u=new URL(url)}catch{return 'Error: invalid URL'}
+   if(!/^https?:$/.test(u.protocol))return 'Error: only http(s) links';
+   if(!confirm('Jarvis wants to open:\n'+u.href))return 'The user declined.';
+   window.open(u.href,'_blank','noopener');return 'Opened.'},
+};
+const system=()=>`You are Jarvis, a calm, concise, slightly witty personal assistant, spoken aloud. Keep replies short (1–3 sentences) unless asked for detail; no markdown or lists since replies are read by a voice. Use tools when they help. Never claim to have done something a tool did not do. Ask before anything with side effects.
+Today is ${new Date().toLocaleString('en-IN')}.
+What you know about the user: ${mem().join('; ')||'nothing yet'}.`;
+
+/* ---------- Claude call with tool loop ---------- */
+async function ask(text){
+  history.push({role:'user',content:text});
+  for(let i=0;i<6;i++){
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{
+      'content-type':'application/json','x-api-key':S.key,'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:S.model,max_tokens:700,system:system(),tools:TOOLS,messages:history})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error?.message||('HTTP '+r.status))}
+    const d=await r.json();
+    history.push({role:'assistant',content:d.content});
+    if(d.stop_reason!=='tool_use')return d.content.filter(b=>b.type==='text').map(b=>b.text).join(' ').trim();
+    const results=[];
+    for(const b of d.content.filter(b=>b.type==='tool_use')){
+      add('tool','⚙ '+b.name+' '+JSON.stringify(b.input));
+      let out;try{out=await RUN[b.name](b.input)}catch(e){out='Error: '+e.message}
+      results.push({type:'tool_result',tool_use_id:b.id,content:String(out)});
+    }
+    history.push({role:'user',content:results});
+  }
+  return 'That took too many steps. Please try again.';
+}
+async function handle(text){
+  text=text.trim();if(!text||busy)return;
+  if(!S.key){$('#dlg').showModal();return}
+  busy=true;stopListen();speechSynthesis.cancel();
+  add('you',text);setState('thinking','Thinking…');
+  try{const reply=await ask(text);add('',reply);await say(reply)}
+  catch(e){add('tool','Error: '+e.message);setState('','')}
+  busy=false;setState('',S.wake?'Listening for “Jarvis”…':'Tap the orb to talk.');
+  if(S.wake)startWake();
+}
+
+/* ---------- Voice out ---------- */
+function say(t){return new Promise(res=>{
+  if(!S.speak||!('speechSynthesis' in window)||!t)return res();
+  const u=new SpeechSynthesisUtterance(t);u.rate=1.02;
+  const v=speechSynthesis.getVoices().find(v=>/en-(GB|IN)/.test(v.lang))||null;if(v)u.voice=v;
+  u.onstart=()=>setState('speaking','Speaking…');u.onend=u.onerror=()=>res();
+  speechSynthesis.speak(u)})}
+
+/* ---------- Voice in ---------- */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let rec=null,wakeMode=false,armed=false;
+function stopListen(){wakeMode=false;try{rec&&rec.abort()}catch{}rec=null}
+function listenOnce(){
+  if(!SR){setState('','Voice input needs Chrome or Edge. You can still type.');return}
+  stopListen();rec=new SR();rec.lang='en-IN';rec.interimResults=true;
+  rec.onresult=e=>{const t=[...e.results].map(r=>r[0].transcript).join('');statusEl.textContent='“'+t+'”';
+    if(e.results[e.results.length-1].isFinal){rec=null;handle(t)}};
+  rec.onerror=e=>setState('',e.error==='not-allowed'?'Allow microphone access in your browser.':'Didn’t catch that.');
+  rec.onend=()=>{if(orb.className==='listening')setState('','Tap the orb to talk.')};
+  setState('listening','Listening…');rec.start();
+}
+function startWake(){
+  if(!SR||busy)return;stopListen();wakeMode=true;armed=false;
+  rec=new SR();rec.lang='en-IN';rec.continuous=true;rec.interimResults=false;
+  rec.onresult=e=>{const t=e.results[e.results.length-1][0].transcript.trim();
+    const m=t.match(/\b(jarvis|service|jar vis)\b[,. ]*(.*)$/i);
+    if(m&&m[2]){handle(m[2])}else if(m||armed){if(m){armed=true;setState('listening','Yes?')}else{armed=false;handle(t)}}};
+  rec.onend=()=>{if(wakeMode&&!busy)try{rec.start()}catch{}};
+  rec.onerror=()=>{};
+  try{rec.start();setState('','Listening for “Jarvis”…')}catch{}
+}
+
+/* ---------- Wiring ---------- */
+orb.onclick=()=>{if(busy)return;if(wakeMode){stopListen();S.wake=false;store.set('wake',false);setState('','Tap the orb to talk.')}else listenOnce()};
+$('#f').onsubmit=e=>{e.preventDefault();const t=$('#t').value;$('#t').value='';handle(t)};
+$('#cfg').onclick=()=>{$('#key').value=S.key;$('#model').value=S.model;$('#wake').checked=S.wake;$('#speak').checked=S.speak;$('#dlg').showModal()};
+$('#save').onclick=()=>{S.key=$('#key').value.trim();S.model=$('#model').value.trim()||'claude-sonnet-5-5';S.wake=$('#wake').checked;S.speak=$('#speak').checked;
+  store.set('key',S.key);store.set('model',S.model);store.set('wake',S.wake);store.set('speak',S.speak);$('#dlg').close();
+  try{Notification.requestPermission()}catch{}
+  S.wake?startWake():stopListen()};
+$('#clr').onclick=()=>{if(confirm('Delete everything Jarvis remembers and all notes?')){store.set('memory',[]);store.set('notes',[]);add('tool','Memory and notes cleared.')}};
+add('',S.key?'Online. How can I help?':'Hello. Open Settings and paste your Claude API key to get started.');
+if(!S.key)setTimeout(()=>$('#dlg').showModal(),400);
+speechSynthesis.getVoices();
+</script>
+</body>
+</html>

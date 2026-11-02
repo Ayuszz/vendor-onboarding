@@ -23,6 +23,7 @@ jobs:
         run: |
           rm -rf _site && cp -r apps/web/dist-demo _site
           cp apps/web/public/favicon.svg _site/ 2>/dev/null || true
+          mkdir -p _site/jarvis && cp jarvis/index.html _site/jarvis/
           touch _site/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with: { path: _site }
