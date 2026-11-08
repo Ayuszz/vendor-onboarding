@@ -89,6 +89,11 @@ function VendorSignIn() {
     setBusy(true);
     try {
       const r = await api.requestCode(email.trim());
+      if (IS_DEMO && r.devCode) {
+        // The public demo has no mail server, so it skips the code step instead of showing the code.
+        signIn(await api.verifyCode(email.trim(), r.devCode));
+        return;
+      }
       setDevCode(r.devCode ?? null);
       setStep('code');
       setCode('');
@@ -134,12 +139,13 @@ function VendorSignIn() {
           )}
         </Field>
         <Button type="submit" variant="primary" size="lg" loading={busy} icon={<Mail className="size-[18px]" />}>
-          Email me a sign-in code
+          {IS_DEMO ? 'Continue' : 'Email me a sign-in code'}
         </Button>
         {IS_DEMO && (
           <p className="text-[13px] text-ink-2">
-            Try <b className="font-medium text-ink">accounts@deccan.in</b> to see a vendor that already exists, or any other email to
-            register a new one.
+            Sign-in codes are switched off on this public demo because it has no mail server. The real app emails a code and never
+            shows it on screen. Try <b className="font-medium text-ink">accounts@deccan.in</b> to see a vendor that already exists, or
+            any other email to register a new one.
           </p>
         )}
       </form>
@@ -152,9 +158,7 @@ function VendorSignIn() {
       </p>
       {devCode && (
         <p className="rounded-(--radius-control) bg-accent-soft px-3 py-2 text-[13px] text-accent">
-          {IS_DEMO
-            ? 'Demo only: this site has no mail server, so the code is shown here. The real app emails it and never shows it on screen. Your code is'
-            : 'Testing mode (DEV_SHOW_OTP is on): your code is'}{' '}
+          Testing mode (DEV_SHOW_OTP is on): your code is{' '}
           <b className="tabular font-semibold tracking-widest">{devCode}</b>
         </p>
       )}

@@ -1,6 +1,6 @@
 # Vendor Onboarding
 
-**Live demo:** https://ayuszz.github.io/vendor-onboarding/ (runs entirely in your browser with no server, so SAP, document checks and sign-in emails are simulated; on that demo site only, the sign-in code is shown on screen. The real app delivers it only by email.)
+**Live demo:** https://ayuszz.github.io/vendor-onboarding/ (runs entirely in your browser with no server, so SAP and sign-in emails are simulated. The demo skips the code step because it has no mail server; it never shows a code. The real app emails the code and never shows it.)
 
 A coded replacement for a low-code vendor onboarding workflow. A requester collects a supplier's details and statutory documents. Each document is checked automatically. Quality (QC) and Supply Chain (SCM) review in parallel, Finance gives the final approval, and the vendor is created in SAP. If SAP fails, the system retries and keeps the same card code each time.
 
@@ -23,7 +23,7 @@ Draft ──submit──▶ QC & SCM review ──(both ✓)──▶ Finance �
 
 **Try the demo journey** (https://ayuszz.github.io/vendor-onboarding/):
 
-1. Vendor tab: enter any email, then type the code shown on screen (demo only). Fill in the company, contact and bank details.
+1. Vendor tab: enter any email and press Continue (the demo has no mail server, so there is no code step). Fill in the company, contact and bank details.
 2. Open **Documents** and upload a GST certificate, PAN card and cancelled cheque. Details are read from the file and filled in, then verified.
 3. Submit. Sign out, use the **Employee** tab, and approve as `qc@example.com`, `scm@example.com` and then `finance@example.com` (password `Demo@1234`). The vendor is created in the mock SAP and shows as **Onboarded**.
 
