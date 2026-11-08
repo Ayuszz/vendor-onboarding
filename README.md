@@ -11,6 +11,22 @@ Draft ──submit──▶ QC & SCM review ──(both ✓)──▶ Finance �
                         └────────── Reject (final) ─┘
 ```
 
+## What it looks like
+
+| Sign in | Company application |
+|---|---|
+| ![Sign in](docs/screenshots/01-sign-in.jpg) | ![Application](docs/screenshots/02-application.jpg) |
+
+| Documents: upload, read, fill, verify | Finance view: onboarded in SAP |
+|---|---|
+| ![Documents](docs/screenshots/03-documents.jpg) | ![Approval](docs/screenshots/04-approval-onboarded.jpg) |
+
+**Try the demo journey** (https://ayuszz.github.io/vendor-onboarding/):
+
+1. Vendor tab: enter any email, then type the code shown on screen (demo only). Fill in the company, contact and bank details.
+2. Open **Documents** and upload a GST certificate, PAN card and cancelled cheque. Details are read from the file and filled in, then verified.
+3. Submit. Sign out, use the **Employee** tab, and approve as `qc@example.com`, `scm@example.com` and then `finance@example.com` (password `Demo@1234`). The vendor is created in the mock SAP and shows as **Onboarded**.
+
 ## Quick start
 
 Requires Node 22+.

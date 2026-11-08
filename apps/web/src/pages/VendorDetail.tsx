@@ -282,8 +282,8 @@ export default function VendorDetail({ vendorId }: { vendorId?: string } = {}) {
 
       {/* Action dock — floating glass bar with exactly the actions this person may take now. */}
       {hasDock && (
-        <div className={clsx('fixed inset-x-0 bottom-20 z-30 flex justify-center px-3 lg:bottom-6', isVendor ? 'lg:pl-[284px]' : 'lg:pl-[268px]')}>
-          <div className="glass-strong animate-rise flex max-w-full items-center gap-2 overflow-x-auto rounded-full p-2 pl-5">
+        <div className={clsx('pointer-events-none fixed inset-x-0 bottom-20 z-30 flex justify-center px-3 lg:bottom-6', isVendor ? 'lg:pl-[284px]' : 'lg:pl-[268px]')}>
+          <div className="glass-strong animate-rise pointer-events-auto flex max-w-full items-center gap-2 overflow-x-auto rounded-full p-2 pl-5">
             <span className="hidden text-[13px] whitespace-nowrap text-ink-2 sm:inline">
               {actingAs ? `Reviewing as ${ROLE_LABELS[actingAs]}` : v.state === 'SAP_ERROR' ? 'SAP sync failed' : STATE_META[v.state].label}
             </span>
