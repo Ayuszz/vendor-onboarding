@@ -14,7 +14,7 @@ import {
 } from '@vo/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { AlertCircle, Check, CheckCircle2, ChevronLeft } from 'lucide-react';
+import { AlertCircle, Check, CheckCircle2, ChevronLeft, Lock } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
@@ -31,8 +31,8 @@ const STAFF_STEPS: { key: StepKey; label: string }[] = [
   { key: 'documents', label: 'Documents' },
   { key: 'review', label: 'Review' },
 ];
-/** Vendors manage documents on their own Documents page, so their application has no documents step. */
-const VENDOR_STEPS = STAFF_STEPS.filter((s) => s.key !== 'documents');
+/** Vendors upload every document inside their application; the other sections stay locked until they submit. */
+const VENDOR_STEPS = STAFF_STEPS;
 const SAVED_STEPS: StepKey[] = ['company', 'contact', 'bank'];
 
 const companySchema = vendorProfileSchema.pick({ legalName: true, constitution: true, category: true });
@@ -168,11 +168,15 @@ export default function VendorEditor() {
         </div>
       </header>
 
-      {isVendor && !id && (
-        <p className="px-1 text-[15px] text-ink-2">
-          Welcome. Tell us about your company, add your bank details, then upload your documents. Your progress is saved at every
-          step, so you can stop and come back anytime.
-        </p>
+      {isVendor && (!vendor.data || vendor.data.state === 'DRAFT') && (
+        <div className="glass flex items-start gap-3 rounded-(--radius-panel) px-4 py-3 text-[14px] text-ink-2">
+          <Lock className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden />
+          <p>
+            <b className="font-medium text-ink">Status: Initiated.</b> You are registered. Fill in your company and bank details, then
+            upload your GST, PAN and bank documents (and MSME or FSSAI if they apply). Approval status, Documents and Settings unlock
+            after you submit. Your progress is saved at every step.
+          </p>
+        </div>
       )}
 
       {vendor.data?.state === 'SENT_BACK' && <SentBackNote vendorId={vendor.data.id} />}
@@ -322,7 +326,7 @@ export default function VendorEditor() {
                 )}
               </Field>
               <p className="text-[13px] text-ink-2 sm:col-span-2">
-                These must match the cancelled cheque or bank letter you upload {isVendor ? 'on the Documents page' : 'in the next step'}.
+                These must match the cancelled cheque or bank letter you upload in the Documents step.
               </p>
             </div>
           )}
@@ -377,8 +381,8 @@ export default function VendorEditor() {
                       </li>
                     ))}
                   </ul>
-                  {isVendor && vendor.data.blockers.some((x) => !x.startsWith('Complete profile')) && (
-                    <Button className="mt-4" variant="primary" onClick={() => navigate('/documents')}>
+                  {vendor.data.blockers.some((x) => !x.startsWith('Complete profile')) && (
+                    <Button className="mt-4" variant="primary" onClick={() => goTo(STEPS.findIndex((x) => x.key === 'documents'))}>
                       Go to documents
                     </Button>
                   )}

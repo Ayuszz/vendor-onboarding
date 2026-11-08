@@ -24,8 +24,8 @@ Draft ──submit──▶ QC & SCM review ──(both ✓)──▶ Finance �
 **Try the demo journey** (https://ayuszz.github.io/vendor-onboarding/):
 
 1. Vendor tab: enter any email and press Continue (the demo has no mail server, so there is no code step). Fill in the company, contact and bank details.
-2. Open **Documents** and upload a GST certificate, PAN card and cancelled cheque. Details are read from the file and filled in, then verified.
-3. Submit. Sign out, use the **Employee** tab, and approve as `qc@example.com`, `scm@example.com` and then `finance@example.com` (password `Demo@1234`). The vendor is created in the mock SAP and shows as **Onboarded**.
+2. Notice the sidebar: only Application is open (status *Initiated*). In the **Documents** step, upload a GST certificate, PAN card and cancelled cheque. Details are read from the file and filled in, then verified.
+3. Submit, and the other sections unlock. Sign out, use the **Employee** tab, and approve as `qc@example.com`, `scm@example.com` and then `finance@example.com` (password `Demo@1234`). The vendor is created in the mock SAP and shows as **Onboarded**.
 
 ## Quick start
 
@@ -79,21 +79,26 @@ apps/web           React 19 + Vite + Tailwind 4 + TanStack Query
 
 ## Vendor portal
 
-After signing in, a vendor gets a sidebar with four sections and one main screen:
+A vendor first registers (verifies their email). That puts the application in the **Initiated** state, and **only the Application is open**. Approval status, Documents and Settings are locked (greyed out with a padlock) until the vendor submits. After submitting, everything unlocks. If a reviewer sends the application back, the vendor can edit it again.
 
-- **Application:** company details, contact and address, bank details, then review and submit. New vendors start here.
-- **Approval status:** the current stage (QC & SCM review, Finance, SAP, Onboarded), any changes your team has requested, and the activity history. A vendor who hasn't uploaded anything yet is taken to Documents instead.
-- **Documents:** GST, PAN, bank proof, MSME, FSSAI and the other documents that apply to the company. Each document runs the same chain:
+The Application has five steps:
 
-  **Upload → Read document → Details filled → Verification**
+1. **Company**: legal name, constitution, what they supply, and toggles for MSME, food business and import/export.
+2. **Contact & address**
+3. **Bank**
+4. **Documents**: GST, PAN and bank proof are required. MSME (Udyam) and FSSAI appear when those toggles are on, plus IEC, AD code and RCMC for importers or exporters. Each document runs the same chain:
 
-  1. The vendor chooses a PDF or a photo.
-  2. The text is read in the browser. Digital PDFs use their embedded text layer (instant and exact). Photos and scanned PDFs go through OCR (Tesseract, self-hosted under `/ocr`, so files are never sent to a third party for OCR).
-  3. The fields fill themselves. Each one is marked *From document*, or *Edited* if the vendor changes it.
-  4. After upload, the server verifies everything again on its own: formats, the GSTIN checksum, the PAN inside the GSTIN, bank details against the profile, and expiry dates.
+   **Upload → Read document → Details filled → Verification**
 
-  The OCR result is stored with the document (method, confidence, fields read, fields edited), so reviewers can see which values came from the file and which were typed.
-- **Settings:** account and company details, theme, and sign out.
+   1. The vendor chooses a PDF or a photo.
+   2. The text is read in the browser. Digital PDFs use their embedded text layer (instant and exact). Photos and scanned PDFs go through OCR (Tesseract, self-hosted under `/ocr`, so files are never sent to a third party for OCR).
+   3. The fields fill themselves. Each one is marked *From document*, or *Edited* if the vendor changes it.
+   4. After upload, the server verifies everything again on its own: formats, the GSTIN checksum, the PAN inside the GSTIN, bank details against the profile, and expiry dates.
+
+   The OCR result is stored with the document (method, confidence, fields read, fields edited), so reviewers can see which values came from the file and which were typed.
+5. **Review & submit**: submitting is only possible once every required document is verified.
+
+After submission the vendor gets: **Approval status** (stage, requested changes, activity), **Documents** (replace or fix a document) and **Settings** (account, theme, sign out).
 
 The field extractors (`packages/shared/src/extract.ts`) look for labels and repair common OCR mix-ups (O↔0, I↔1, S↔5). They accept a value only after it passes validation, so a value that can't be read reliably is left empty rather than guessed.
 

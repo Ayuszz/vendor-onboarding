@@ -1,7 +1,7 @@
 import { STATE_META, requiredDocumentKeys, type Tone } from '@vo/shared';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Activity, FileStack, FileText, LogOut, Settings as SettingsIcon } from 'lucide-react';
+import { Activity, FileStack, FileText, Lock, LogOut, Settings as SettingsIcon } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -44,29 +44,36 @@ export function VendorLayout() {
     : v.state === 'SENT_BACK'
       ? { text: 'Changes needed', tone: 'warning' }
       : v.state === 'DRAFT'
-        ? { text: 'Not submitted', tone: 'neutral' }
+        ? { text: 'Initiated · in progress', tone: 'neutral' }
         : { text: 'Submitted', tone: 'success' };
+  const lockedBadge = { text: 'Opens after you submit', tone: 'neutral' as Tone };
   const stage = v ? STATE_META[v.state] : null;
 
+  // Until the application is submitted, only the Application is open.
+  const unlocked = !!v && v.state !== 'DRAFT';
   const nav = [
-    { to: '/application', label: 'Application', short: 'Application', icon: FileText, badge: appBadge },
+    { to: '/application', label: 'Application', short: 'Application', icon: FileText, badge: appBadge, locked: false },
     {
       to: '/status',
       label: 'Approval status',
       short: 'Status',
       icon: Activity,
-      badge: stage ? { text: stage.label, tone: stage.tone } : { text: 'Not started', tone: 'neutral' as Tone },
+      badge: unlocked && stage ? { text: stage.label, tone: stage.tone } : lockedBadge,
+      locked: !unlocked,
     },
     {
       to: '/documents',
       label: 'Documents',
       short: 'Documents',
       icon: FileStack,
-      badge: v
+      locked: !unlocked,
+      badge: !unlocked
+        ? lockedBadge
+        : v
         ? { text: docsFailed ? 'Needs attention' : `${verified} of ${required.length} verified`, tone: (docsFailed ? 'danger' : verified === required.length ? 'success' : 'neutral') as Tone }
         : null,
     },
-    { to: '/settings', label: 'Settings', short: 'Settings', icon: SettingsIcon, badge: null },
+    { to: '/settings', label: 'Settings', short: 'Settings', icon: SettingsIcon, badge: unlocked ? null : lockedBadge, locked: !unlocked },
   ];
 
   return (
@@ -85,7 +92,22 @@ export function VendorLayout() {
           </div>
 
           <nav className="flex flex-col gap-1" aria-label="Vendor portal">
-            {nav.map(({ to, label, icon: Icon, badge }) => (
+            {nav.map(({ to, label, icon: Icon, badge, locked }) =>
+              locked ? (
+                <div
+                  key={to}
+                  aria-disabled="true"
+                  title="Opens after you submit your application"
+                  className="flex cursor-not-allowed items-start gap-3 rounded-(--radius-control) px-3 py-2.5 text-ink-3 opacity-70"
+                >
+                  <Icon className="mt-0.5 size-[18px] shrink-0" aria-hidden />
+                  <span className="min-w-0 flex-1 leading-tight">
+                    <span className="block text-[14px]">{label}</span>
+                    {badge && <span className="mt-0.5 block truncate text-[12px]">{badge.text}</span>}
+                  </span>
+                  <Lock className="mt-0.5 size-3.5 shrink-0" aria-label="Locked" />
+                </div>
+              ) : (
               <NavLink
                 key={to}
                 to={to}
@@ -106,7 +128,8 @@ export function VendorLayout() {
                   </>
                 )}
               </NavLink>
-            ))}
+              ),
+            )}
           </nav>
 
           <div className="mt-auto flex items-center gap-3 rounded-(--radius-panel) p-2">
@@ -137,7 +160,14 @@ export function VendorLayout() {
         aria-label="Vendor portal"
         className="glass-strong fixed inset-x-3 bottom-3 z-40 flex items-center justify-around rounded-full p-1.5 pb-[max(6px,env(safe-area-inset-bottom))] lg:hidden"
       >
-        {nav.map(({ to, short, icon: Icon, badge }) => (
+        {nav.map(({ to, short, icon: Icon, badge, locked }) =>
+          locked ? (
+            <div key={to} aria-disabled="true" className="relative flex flex-1 flex-col items-center gap-0.5 rounded-full py-1.5 text-[11px] text-ink-3 opacity-60">
+              <Icon className="size-5" aria-hidden />
+              {short}
+              <Lock className="absolute top-0.5 right-[26%] size-3" aria-label="Locked" />
+            </div>
+          ) : (
           <NavLink
             key={to}
             to={to}
@@ -151,7 +181,8 @@ export function VendorLayout() {
               <span className="absolute top-0.5 right-[26%] size-2 rounded-full bg-bad" aria-label={badge.text} />
             )}
           </NavLink>
-        ))}
+          ),
+        )}
       </nav>
     </div>
   );

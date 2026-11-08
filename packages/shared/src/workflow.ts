@@ -26,7 +26,7 @@ export const STATES = [
 export type State = (typeof STATES)[number];
 
 export const STATE_META: Record<State, { label: string; tone: Tone; terminal?: boolean }> = {
-  DRAFT: { label: 'Draft', tone: 'neutral' },
+  DRAFT: { label: 'Initiated', tone: 'neutral' },
   SENT_BACK: { label: 'Sent back', tone: 'warning' },
   IN_REVIEW: { label: 'QC & SCM review', tone: 'info' },
   FINANCE_REVIEW: { label: 'Finance review', tone: 'info' },

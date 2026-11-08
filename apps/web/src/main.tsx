@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { lazy, StrictMode, Suspense } from 'react';
+import { lazy, StrictMode, Suspense, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, MemoryRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
@@ -46,20 +46,25 @@ function PageFallback() {
 /** Vendors land on their approval status, or straight into registration if they are new. */
 function VendorHome() {
   const { vendorId } = useAuth();
-  return <Navigate to={vendorId ? '/status' : '/application'} replace />;
+  const vendor = useQuery({ queryKey: ['vendor', vendorId], queryFn: () => api.get(vendorId!), enabled: !!vendorId });
+  if (vendorId && vendor.isPending) return <PageFallback />;
+  // Initiated vendors (registered, not yet submitted) only have the Application open.
+  return <Navigate to={vendor.data && vendor.data.state !== 'DRAFT' ? '/status' : '/application'} replace />;
 }
 
-/**
- * Approval status. A new vendor (no application, or nothing uploaded yet) is taken to
- * the step they actually need: company details first, then document upload.
- */
-function VendorStatus() {
+/** Every vendor section except the Application stays locked until the application is submitted. */
+function Unlocked({ children }: { children: ReactElement }) {
   const { vendorId } = useAuth();
   const vendor = useQuery({ queryKey: ['vendor', vendorId], queryFn: () => api.get(vendorId!), enabled: !!vendorId });
   if (!vendorId) return <Navigate to="/application" replace />;
   if (vendor.isPending) return <PageFallback />;
-  if (vendor.data && vendor.data.documents.length === 0) return <Navigate to="/documents" replace />;
-  return <VendorDetail vendorId={vendorId} />;
+  if (!vendor.data || vendor.data.state === 'DRAFT') return <Navigate to="/application" replace />;
+  return children;
+}
+
+function VendorStatus() {
+  const { vendorId } = useAuth();
+  return <VendorDetail vendorId={vendorId!} />;
 }
 
 function Gate() {
@@ -73,9 +78,9 @@ function Gate() {
           <Route element={<VendorLayout />}>
             <Route index element={<VendorHome />} />
             <Route path="application" element={<VendorEditor />} />
-            <Route path="status" element={<VendorStatus />} />
-            <Route path="documents" element={<VendorDocuments />} />
-            <Route path="settings" element={<VendorSettings />} />
+            <Route path="status" element={<Unlocked><VendorStatus /></Unlocked>} />
+            <Route path="documents" element={<Unlocked><VendorDocuments /></Unlocked>} />
+            <Route path="settings" element={<Unlocked><VendorSettings /></Unlocked>} />
             <Route path="*" element={<VendorHome />} />
           </Route>
         </Routes>
