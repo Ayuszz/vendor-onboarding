@@ -4,4 +4,5 @@ export * from './documents.js';
 export * from './workflow.js';
 export * from './readiness.js';
 export * from './extract.js';
+export * from './autofill.js';
 export * from './api.js';

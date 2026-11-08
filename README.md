@@ -24,7 +24,7 @@ Draft ──submit──▶ QC & SCM review ──(both ✓)──▶ Finance �
 **Try the demo journey** (https://ayuszz.github.io/vendor-onboarding/):
 
 1. Vendor tab: enter any email and press Continue (the demo has no mail server, so there is no code step). Fill in the company, contact and bank details.
-2. Notice the sidebar: only Application is open (status *Initiated*). In the **Documents** step, upload a GST certificate, PAN card and cancelled cheque. Details are read from the file and filled in, then verified.
+2. Notice the sidebar: only Application is open (status *Initiated*). Choose what you supply and upload a GST certificate, PAN card and cancelled cheque. The company, address and bank details are read from the files and shown on **Your details** with a "From GST certificate" style badge. You only type the contact person, and can use **Correct** on any value.
 3. Submit, and the other sections unlock. Sign out, use the **Employee** tab, and approve as `qc@example.com`, `scm@example.com` and then `finance@example.com` (password `Demo@1234`). The vendor is created in the mock SAP and shows as **Onboarded**.
 
 ## Quick start
@@ -79,7 +79,7 @@ apps/web           React 19 + Vite + Tailwind 4 + TanStack Query
 
 ## Vendor portal
 
-A vendor first registers (verifies their email). That puts the application in the **Initiated** state, and **only the Application is open**. Approval status, Documents and Settings are locked (greyed out with a padlock) until the vendor submits. After submitting, everything unlocks. If a reviewer sends the application back, the vendor can edit it again.
+A vendor first registers (verifies their email). That puts the application in the **Initiated** state, and **only the Application is open**. Approval status, Documents and Settings are locked (greyed out with a padlock) until the vendor submits. The application is document-first: the vendor uploads documents, OCR reads the legal name, address, constitution and bank details from them, and the vendor only checks the result. After submitting, everything unlocks. If a reviewer sends the application back, the vendor can edit it again.
 
 The Application has five steps:
 

@@ -96,6 +96,9 @@ export const DOCUMENTS: Record<DocumentKey, DocumentType> = {
     fields: [
       { key: 'gstin', label: 'GSTIN', type: 'text', required: true, normalize: true, placeholder: '27AAPFU0939F1ZV' },
       { key: 'legalName', label: 'Legal name on certificate', type: 'text', required: true },
+      { key: 'tradeName', label: 'Trade name', type: 'text' },
+      { key: 'constitution', label: 'Constitution of business', type: 'text' },
+      { key: 'address', label: 'Principal place of business', type: 'text' },
     ],
     requirement: () => 'required',
     verify: (f, p, ctx) => {
@@ -140,6 +143,7 @@ export const DOCUMENTS: Record<DocumentKey, DocumentType> = {
     fields: [
       { key: 'ifsc', label: 'IFSC', type: 'text', required: true, normalize: true },
       { key: 'accountNumber', label: 'Account number', type: 'text', required: true },
+      { key: 'accountHolder', label: 'Account holder name', type: 'text' },
     ],
     requirement: () => 'required',
     verify: (f, p) => {

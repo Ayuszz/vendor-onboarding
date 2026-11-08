@@ -6,7 +6,7 @@ const GSTIN = '27AABCU9603R1Z' + gstinCheckChar('27AABCU9603R1Z');
 describe('GST certificate', () => {
   it('reads GSTIN and legal name from a clean certificate', () => {
     const text = `Government of India\nForm GST REG-06\nRegistration Certificate\nRegistration Number : ${GSTIN}\n1. Legal Name  ACME PACKAGING PRIVATE LIMITED\n2. Trade Name, if any  ACME`;
-    expect(extractFields('gst', text).fields).toEqual({ gstin: GSTIN, legalName: 'ACME PACKAGING PRIVATE LIMITED' });
+    expect(extractFields('gst', text).fields).toEqual({ gstin: GSTIN, legalName: 'ACME PACKAGING PRIVATE LIMITED', tradeName: 'ACME' });
   });
 
   it('repairs OCR confusions and spaces inside the GSTIN', () => {

@@ -7,6 +7,10 @@ import {
   addressSchema,
   bankSchema,
   contactSchema,
+  DOCUMENTS,
+  deriveProfile,
+  mergeDraft,
+  requiredDocumentKeys,
   resolveBank,
   vendorProfileSchema,
   type VendorDTO,
@@ -15,7 +19,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { AlertCircle, Check, CheckCircle2, ChevronLeft, Lock } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { DocumentCard } from '../components/DocumentCard';
@@ -23,7 +27,7 @@ import { Button, Field, Input, Panel, Select, Skeleton, Toggle, useToast } from 
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
-type StepKey = 'company' | 'contact' | 'bank' | 'documents' | 'review';
+type StepKey = 'company' | 'contact' | 'bank' | 'documents' | 'details' | 'review';
 const STAFF_STEPS: { key: StepKey; label: string }[] = [
   { key: 'company', label: 'Company' },
   { key: 'contact', label: 'Contact & address' },
@@ -31,15 +35,23 @@ const STAFF_STEPS: { key: StepKey; label: string }[] = [
   { key: 'documents', label: 'Documents' },
   { key: 'review', label: 'Review' },
 ];
-/** Vendors upload every document inside their application; the other sections stay locked until they submit. */
-const VENDOR_STEPS = STAFF_STEPS;
-const SAVED_STEPS: StepKey[] = ['company', 'contact', 'bank'];
+/**
+ * Vendors upload their documents first; the company, address and bank details are then read from
+ * those documents, so the vendor only checks them. The other sections stay locked until they submit.
+ */
+const VENDOR_STEPS: { key: StepKey; label: string }[] = [
+  { key: 'documents', label: 'Documents' },
+  { key: 'details', label: 'Your details' },
+  { key: 'review', label: 'Review' },
+];
+const SAVED_STEPS: StepKey[] = ['company', 'contact', 'bank', 'details'];
 
 const companySchema = vendorProfileSchema.pick({ legalName: true, constitution: true, category: true });
 const stepSchemas: Partial<Record<StepKey, z.ZodType>> = {
   company: companySchema,
   contact: z.object({ contact: contactSchema, address: addressSchema }),
   bank: z.object({ bank: bankSchema }),
+  details: vendorProfileSchema,
 };
 
 type Errors = Record<string, string>;
@@ -91,11 +103,28 @@ export default function VendorEditor() {
     }
   }, [vendor.data, loadedId]);
 
+  // A vendor's application is created the moment they register, so documents can be uploaded straight away.
+  const creating = useRef(false);
+  useEffect(() => {
+    if (!isVendor || myVendorId || !user || creating.current) return;
+    creating.current = true;
+    api
+      .create({ isMsme: false, isImportExport: false, isFoodBusiness: false, paymentTermsDays: 30, contact: { email: user.email } })
+      .then(async (v) => {
+        qc.setQueryData(['vendor', v.id], v);
+        await refresh();
+      })
+      .catch((e: Error) => {
+        creating.current = false;
+        toast(e.message, 'danger');
+      });
+  }, [isVendor, myVendorId, user, qc, refresh, toast]);
+
   const editable = !id || !!vendor.data?.allowedActions.includes('submit') || ['DRAFT', 'SENT_BACK'].includes(vendor.data?.state ?? '');
 
   const save = useMutation({
     mutationFn: async (): Promise<VendorDTO> =>
-      id ? api.update(id, form, vendor.data?.version) : api.create(form),
+      id ? api.update(id, form, isVendor ? undefined : vendor.data?.version) : api.create(form),
     onSuccess: (v) => {
       qc.setQueryData(['vendor', v.id], v);
       qc.invalidateQueries({ queryKey: ['vendors'] });
@@ -125,6 +154,23 @@ export default function VendorEditor() {
     const errs = validate(key, form);
     setErrors(errs);
     if (Object.keys(errs).length) return;
+    if (isVendor && key === 'documents') {
+      if (!form.category) return toast('Choose what you supply first', 'danger');
+      const missing = requiredDocumentKeys(form).filter((k) => !vendor.data?.documents.some((d) => d.key === k));
+      if (missing.length) return toast(`Upload ${missing.map((k) => DOCUMENTS[k].label).join(', ')} to continue`, 'danger');
+      // Fill the company, address and bank details from what was read off the documents.
+      const merged = mergeDraft(form, derived.profile);
+      setForm(merged);
+      setEditing({});
+      try {
+        await api.update(id!, { ...derived.profile, category: form.category });
+        await qc.invalidateQueries({ queryKey: ['vendor', id] });
+        goTo(step + 1);
+      } catch (e) {
+        toast((e as Error).message, 'danger');
+      }
+      return;
+    }
     if (SAVED_STEPS.includes(key)) {
       try {
         const v = await save.mutateAsync();
@@ -143,7 +189,25 @@ export default function VendorEditor() {
   const docs = useMemo(() => applicableDocuments(form), [form]);
   const bank = form.bank?.ifsc ? resolveBank(form.bank.ifsc) : null;
 
-  if (id && vendor.isPending) return <Skeleton className="h-96 w-full" />;
+  // Everything that can be read off the uploaded documents, and which document it came from.
+  const derived = useMemo(
+    () => deriveProfile(Object.fromEntries((vendor.data?.documents ?? []).map((d) => [d.key, d.fields]))),
+    [vendor.data?.documents],
+  );
+  const [editing, setEditing] = useState<Record<string, boolean>>({});
+
+  // Answers that decide which documents are needed are saved straight away.
+  const answer = useMutation({
+    mutationFn: (patch: VendorDraft) => api.update(id!, patch),
+    onSuccess: (v) => qc.setQueryData(['vendor', v.id], v),
+    onError: (e) => toast(e.message, 'danger'),
+  });
+  const ask = (patch: VendorDraft) => {
+    setForm((f) => ({ ...f, ...patch }));
+    if (id) answer.mutate(patch);
+  };
+
+  if ((id && vendor.isPending) || (isVendor && !id)) return <Skeleton className="h-96 w-full" />;
   if (id && vendor.data && !editable) {
     navigate(isVendor ? '/status' : `/vendors/${id}`, { replace: true });
     return null;
@@ -172,9 +236,9 @@ export default function VendorEditor() {
         <div className="glass flex items-start gap-3 rounded-(--radius-panel) px-4 py-3 text-[14px] text-ink-2">
           <Lock className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden />
           <p>
-            <b className="font-medium text-ink">Status: Initiated.</b> You are registered. Fill in your company and bank details, then
-            upload your GST, PAN and bank documents (and MSME or FSSAI if they apply). Approval status, Documents and Settings unlock
-            after you submit. Your progress is saved at every step.
+            <b className="font-medium text-ink">Status: Initiated.</b> You are registered. Upload your GST, PAN and bank documents (and
+            MSME or FSSAI if they apply) and we will read your company, address and bank details from them, so you only check them.
+            Approval status, Documents and Settings unlock after you submit. Your progress is saved at every step.
           </p>
         </div>
       )}
@@ -333,8 +397,29 @@ export default function VendorEditor() {
 
           {key === 'documents' && vendor.data && (
             <div className="space-y-3">
+              {isVendor && (
+                <div className="space-y-4 pb-2">
+                  <Field label="What do you supply?" hint="Decides which documents we need from you">
+                    {(fid) => (
+                      <Select id={fid} value={form.category ?? ''} onChange={(e) => ask({ category: (e.target.value || undefined) as VendorDraft['category'] })}>
+                        <option value="">Choose…</option>
+                        {CATEGORIES.map((c) => (
+                          <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+                        ))}
+                      </Select>
+                    )}
+                  </Field>
+                  <div className="hairline divide-y divide-[var(--glass-line)] rounded-(--radius-control) border px-4">
+                    <Toggle checked={!!form.isMsme} onChange={(v) => ask({ isMsme: v })} label="Registered MSME" description="Adds the Udyam certificate" />
+                    <Toggle checked={!!form.isFoodBusiness} onChange={(v) => ask({ isFoodBusiness: v })} label="Food business operator" description="Adds the FSSAI license" />
+                    <Toggle checked={!!form.isImportExport} onChange={(v) => ask({ isImportExport: v })} label="Imports or exports" description="Adds IEC, AD code and RCMC" />
+                  </div>
+                </div>
+              )}
               <p className="text-[14px] text-ink-2">
-                Each document is checked automatically after upload — formats, checksums and that numbers match each other and your profile.
+                {isVendor
+                  ? 'Upload each document. We read the text from it and fill in your details for you, then check everything automatically.'
+                  : 'Each document is checked automatically after upload — formats, checksums and that numbers match each other and your profile.'}
               </p>
               {docs
                 .filter((d) => d.requirement === 'required')
@@ -356,6 +441,36 @@ export default function VendorEditor() {
                   </div>
                 </details>
               )}
+            </div>
+          )}
+
+          {key === 'details' && vendor.data && (
+            <div className="space-y-6">
+              <p className="text-[14px] text-ink-2">
+                We read these details from your documents. Check them, and use <b className="font-medium text-ink">Correct</b> if anything
+                is wrong. Only your contact person is typed in, because it is not printed on your documents.
+              </p>
+              <RegistrationNumbers docs={vendor.data.documents} />
+              {DETAIL_SECTIONS.map((sec) => (
+                <section key={sec.title}>
+                  <h3 className="mb-1 text-[15px] font-semibold">{sec.title}</h3>
+                  <dl className="divide-y divide-[var(--glass-line)]">
+                    {sec.rows.map((row) => (
+                      <DetailRow
+                        key={row.path}
+                        row={row}
+                        form={form}
+                        derived={derived}
+                        error={errors[row.path]}
+                        editing={!!editing[row.path]}
+                        onEdit={() => setEditing((e) => ({ ...e, [row.path]: true }))}
+                        onChange={(v) => setForm((f) => setPath(f, row.path, v))}
+                        hint={row.path === 'bank.ifsc' && bank ? (bank.name ? `${bank.name} — bank code ${bank.code}` : `Bank code ${bank.code}`) : undefined}
+                      />
+                    ))}
+                  </dl>
+                </section>
+              ))}
             </div>
           )}
 
@@ -381,6 +496,11 @@ export default function VendorEditor() {
                       </li>
                     ))}
                   </ul>
+                  {isVendor && vendor.data.blockers.some((x) => x.startsWith('Complete profile')) && (
+                    <Button className="mt-4 mr-2" variant="primary" onClick={() => goTo(STEPS.findIndex((x) => x.key === 'details'))}>
+                      Go to your details
+                    </Button>
+                  )}
                   {vendor.data.blockers.some((x) => !x.startsWith('Complete profile')) && (
                     <Button className="mt-4" variant="primary" onClick={() => goTo(STEPS.findIndex((x) => x.key === 'documents'))}>
                       Go to documents
@@ -436,5 +556,163 @@ function SentBackNote({ vendorId }: { vendorId: string }) {
         <p className="mt-0.5 text-ink-2">{last.reason}</p>
       </div>
     </div>
+  );
+}
+
+
+/* ---------- details read from documents (vendor flow) ---------- */
+
+interface DetailRowDef {
+  path: string;
+  label: string;
+  optional?: boolean;
+  /** Not printed on any document, so always typed in. */
+  manual?: boolean;
+  kind?: 'constitution';
+  inputMode?: 'numeric' | 'tel';
+}
+
+const DETAIL_SECTIONS: { title: string; rows: DetailRowDef[] }[] = [
+  {
+    title: 'Company',
+    rows: [
+      { path: 'legalName', label: 'Legal name' },
+      { path: 'tradeName', label: 'Trade name', optional: true },
+      { path: 'constitution', label: 'Constitution', kind: 'constitution' },
+    ],
+  },
+  {
+    title: 'Registered address',
+    rows: [
+      { path: 'address.line1', label: 'Address line 1' },
+      { path: 'address.line2', label: 'Address line 2', optional: true },
+      { path: 'address.city', label: 'City' },
+      { path: 'address.state', label: 'State' },
+      { path: 'address.pincode', label: 'PIN code', inputMode: 'numeric' },
+    ],
+  },
+  {
+    title: 'Bank account',
+    rows: [
+      { path: 'bank.accountHolder', label: 'Account holder' },
+      { path: 'bank.accountNumber', label: 'Account number', inputMode: 'numeric' },
+      { path: 'bank.ifsc', label: 'IFSC' },
+    ],
+  },
+  {
+    title: 'Contact person',
+    rows: [
+      { path: 'contact.name', label: 'Name', manual: true },
+      { path: 'contact.phone', label: 'Mobile', manual: true, inputMode: 'tel' },
+    ],
+  },
+];
+
+function getPath(o: unknown, path: string): string {
+  const v = path.split('.').reduce<unknown>((a, k) => (a && typeof a === 'object' ? (a as Record<string, unknown>)[k] : undefined), o);
+  return typeof v === 'string' ? v : '';
+}
+function setPath(f: VendorDraft, path: string, value: string): VendorDraft {
+  const [a, b] = path.split('.') as [string, string | undefined];
+  if (!b) return { ...f, [a]: value || undefined } as VendorDraft;
+  return { ...f, [a]: { ...((f as Record<string, object>)[a] ?? {}), [b]: value } } as VendorDraft;
+}
+
+function DetailRow({
+  row, form, derived, error, editing, onEdit, onChange, hint,
+}: {
+  row: DetailRowDef;
+  form: VendorDraft;
+  derived: { profile: VendorDraft; sources: Record<string, string> };
+  error: string | undefined;
+  editing: boolean;
+  onEdit: () => void;
+  onChange: (v: string) => void;
+  hint: string | undefined;
+}) {
+  const value = getPath(form, row.path);
+  const fromDoc = getPath(derived.profile, row.path);
+  const source = derived.sources[row.path];
+  const missing = !value && !row.optional;
+  const showInput = row.manual || editing || missing || !!error;
+  const label = row.kind === 'constitution' && value ? (CONSTITUTION_LABELS[value as keyof typeof CONSTITUTION_LABELS] ?? value) : value;
+  return (
+    <div className="grid gap-1 py-3 sm:grid-cols-[180px_1fr] sm:items-start sm:gap-4">
+      <dt className="pt-2 text-[13px] text-ink-3">{row.label}</dt>
+      <dd className="min-w-0">
+        {showInput ? (
+          <div>
+            {row.kind === 'constitution' ? (
+              <Select value={value} onChange={(e) => onChange(e.target.value)} aria-label={row.label} aria-invalid={!!error}>
+                <option value="">Choose…</option>
+                {CONSTITUTIONS.map((c) => (
+                  <option key={c} value={c}>{CONSTITUTION_LABELS[c]}</option>
+                ))}
+              </Select>
+            ) : (
+              <Input
+                value={value}
+                onChange={(e) => onChange(row.path === 'bank.ifsc' ? e.target.value.toUpperCase().slice(0, 11) : e.target.value)}
+                aria-label={row.label}
+                aria-invalid={!!error}
+                inputMode={row.inputMode}
+                autoComplete="off"
+              />
+            )}
+            {error ? (
+              <p className="mt-1 text-[12px] text-bad">{error}</p>
+            ) : (
+              <p className="mt-1 text-[12px] text-ink-3">
+                {row.manual
+                  ? 'Not printed on your documents, so please type it.'
+                  : missing
+                    ? 'We could not read this from your documents. Enter it here, or go back and upload a clearer copy.'
+                    : (hint ?? 'Correcting a value we read from your document.')}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className={clsx('tabular text-[15px]', !value && 'text-ink-3')}>{label || '—'}</span>
+            {value && source && (
+              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">
+                {value === fromDoc ? `From ${source}` : 'Edited'}
+              </span>
+            )}
+            {hint && <span className="text-[12px] text-ink-3">{hint}</span>}
+            {!row.optional || value ? (
+              <button type="button" onClick={onEdit} className="focus-ring ml-auto rounded text-[13px] font-medium text-accent hover:underline">
+                Correct
+              </button>
+            ) : null}
+          </div>
+        )}
+      </dd>
+    </div>
+  );
+}
+
+/** Tax and licence numbers read from the documents, shown for reference. */
+function RegistrationNumbers({ docs }: { docs: { key: string; fields: Record<string, string> }[] }) {
+  const get = (k: string, f: string) => docs.find((d) => d.key === k)?.fields[f];
+  const items = [
+    ['GSTIN', get('gst', 'gstin')],
+    ['PAN', get('pan', 'pan')],
+    ['Udyam number', get('msme', 'udyamNumber')],
+    ['FSSAI license', get('fssai', 'licenseNumber')],
+  ].filter((x): x is [string, string] => !!x[1]);
+  if (!items.length) return null;
+  return (
+    <section>
+      <h3 className="mb-1 text-[15px] font-semibold">Registrations</h3>
+      <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+        {items.map(([l, v]) => (
+          <div key={l}>
+            <dt className="text-[13px] text-ink-3">{l}</dt>
+            <dd className="tabular text-[15px]">{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }

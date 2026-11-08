@@ -185,6 +185,23 @@ export function findFssai(text: string): string | null {
   return null;
 }
 
+/** Address after a label, continued over following lines until a 6-digit PIN code ends it. */
+export function findAddress(text: string): string | null {
+  const ls = lines(text);
+  const label = /(PRINCIPAL\s*PLACE\s*OF\s*BUSINESS|REGISTERED\s*ADDRESS|ADDRESS\s*OF\s*(THE\s*)?(PRINCIPAL|BUSINESS)|^ADDRESS\b)/i;
+  for (let i = 0; i < ls.length; i++) {
+    const m = label.exec(ls[i]!);
+    if (!m) continue;
+    let acc = ls[i]!.slice(m.index + m[0].length).replace(/^[\s:.\-–—]+/, '');
+    for (let j = i + 1; j < Math.min(i + 5, ls.length) && !/\b\d{6}\b/.test(acc); j++) acc += ' ' + ls[j]!;
+    acc = acc.replace(/\s+/g, ' ').trim();
+    const pin = /\b\d{6}\b/.exec(acc);
+    const out = (pin ? acc.slice(0, pin.index + 6) : acc).slice(0, 240).trim();
+    if (out.length >= 8) return out;
+  }
+  return null;
+}
+
 const put = (out: Extraction, key: string, value: string | null | undefined) => {
   if (value) {
     out.fields[key] = value;
@@ -200,6 +217,9 @@ export function extractFields(key: DocumentKey, text: string): Extraction {
     case 'gst':
       put(out, 'gstin', findGstin(T));
       put(out, 'legalName', cleanName(afterLabel(T, /LEGAL\s*NAME(\s*OF\s*(THE\s*)?BUSINESS)?/i)));
+      put(out, 'tradeName', cleanName(afterLabel(T, /TRADE\s*NAME(\s*,?\s*IF\s*ANY)?/i)));
+      put(out, 'constitution', cleanName(afterLabel(T, /CONSTITUTION\s*OF\s*(THE\s*)?BUSINESS/i)));
+      put(out, 'address', findAddress(T));
       break;
     case 'pan':
       put(out, 'pan', findPan(T));
@@ -208,6 +228,7 @@ export function extractFields(key: DocumentKey, text: string): Extraction {
     case 'bank_proof':
       put(out, 'ifsc', findIfsc(T));
       put(out, 'accountNumber', findAccountNumber(T));
+      put(out, 'accountHolder', cleanName(afterLabel(T, /(ACCOUNT\s*(HOLDER|NAME)|A\/C\s*(HOLDER|NAME)|NAME\s*OF\s*(THE\s*)?ACCOUNT\s*HOLDER|BENEFICIARY(\s*NAME)?)/i)));
       break;
     case 'msme': {
       put(out, 'udyamNumber', findUdyam(T));
