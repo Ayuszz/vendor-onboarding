@@ -407,18 +407,27 @@ export const demoApi = {
       currentUser = u;
       return sessionFor(u, true);
     }),
-  requestCode: (raw: string) =>
-    wrap((): OtpRequestResult => {
-      const email = raw.trim().toLowerCase();
-      if (USERS.some((u) => STAFF_IDS.has(u.id) && u.email === email))
-        throw new DemoError(400, 'BAD_REQUEST', 'This is a staff email. Use the Employee tab to sign in with your password.');
-      const prev = codes.get(email);
-      if (prev && Date.now() - prev.sentAt < 30_000)
-        throw new DemoError(429, 'TOO_SOON', 'Wait 30 seconds before asking for another code.');
-      const code = String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
-      codes.set(email, { code, expires: Date.now() + 600_000, attempts: 0, sentAt: Date.now() });
-      return { sent: true, expiresInSeconds: 600, devCode: code };
-    }),
+  requestCode: async (raw: string): Promise<OtpRequestResult> => {
+    const email = raw.trim().toLowerCase();
+    if (USERS.some((u) => STAFF_IDS.has(u.id) && u.email === email))
+      throw new DemoError(400, 'BAD_REQUEST', 'This is a staff email. Use the Employee tab to sign in with your password.');
+    const prev = codes.get(email);
+    if (prev && Date.now() - prev.sentAt < 30_000)
+      throw new DemoError(429, 'TOO_SOON', 'Wait 30 seconds before asking for another code.');
+    const env = import.meta.env as Record<string, string | undefined>;
+    const service = env.VITE_EMAILJS_SERVICE_ID, template = env.VITE_EMAILJS_TEMPLATE_ID, key = env.VITE_EMAILJS_PUBLIC_KEY;
+    if (!service || !template || !key)
+      throw new DemoError(503, 'MAIL_NOT_CONFIGURED', 'Email sending is not set up on this demo, so no sign-in code can be sent. Nobody is signed in without a verified email.');
+    const code = String(crypto.getRandomValues(new Uint32Array(1))[0]! % 1_000_000).padStart(6, '0');
+    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ service_id: service, template_id: template, user_id: key, template_params: { to_email: email, email, code, expires_in: '10 minutes' } }),
+    }).catch(() => null);
+    if (!res || !res.ok) throw new DemoError(502, 'MAIL_FAILED', 'We could not send the email. Check the address and try again.');
+    codes.set(email, { code, expires: Date.now() + 600_000, attempts: 0, sentAt: Date.now() });
+    return { sent: true, expiresInSeconds: 600 };
+  },
   verifyCode: (raw: string, code: string) =>
     wrap((): SessionDTO => {
       const email = raw.trim().toLowerCase();
