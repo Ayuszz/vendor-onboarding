@@ -15,7 +15,10 @@ export interface UserDTO {
 
 /** Session returned by every sign-in route and by GET /me. */
 export interface SessionDTO {
+  /** Short-lived access token. */
   token?: string;
+  /** Long-lived, single-use token that gets a fresh pair; stored hashed in the database. */
+  refreshToken?: string;
   user: UserDTO;
   /** For vendor accounts: their vendor record, or null when they have not started onboarding. */
   vendorId: string | null;
@@ -23,6 +26,7 @@ export interface SessionDTO {
 
 export const emailSchema = z.string().trim().toLowerCase().email('Enter a valid email address').max(200);
 export const staffLoginSchema = z.object({ email: emailSchema, password: z.string().min(1, 'Enter your password').max(200) });
+export const refreshSchema = z.object({ refreshToken: z.string().min(20).max(200) });
 export const otpRequestSchema = z.object({ email: emailSchema });
 export const otpVerifySchema = z.object({ email: emailSchema, code: z.string().trim().regex(/^[0-9]{6}$/, 'Enter the 6-digit code') });
 

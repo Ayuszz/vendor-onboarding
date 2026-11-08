@@ -35,6 +35,50 @@ export const tokenStore = {
   },
 };
 
+const REFRESH_KEY = 'vo.refresh';
+export const refreshStore = {
+  get: () => {
+    try {
+      return localStorage.getItem(REFRESH_KEY);
+    } catch {
+      return null;
+    }
+  },
+  set: (t: string | null) => {
+    try {
+      if (t) localStorage.setItem(REFRESH_KEY, t);
+      else localStorage.removeItem(REFRESH_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+  },
+};
+
+/** One refresh at a time: parallel requests that hit an expired token share the same refresh call. */
+let refreshing: Promise<boolean> | null = null;
+function refreshSession(): Promise<boolean> {
+  const rt = refreshStore.get();
+  if (!rt) return Promise.resolve(false);
+  refreshing ??= fetch('/api/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken: rt }),
+  })
+    .then(async (r) => {
+      if (!r.ok) return false;
+      const s = (await r.json()) as SessionDTO;
+      if (!s.token) return false;
+      tokenStore.set(s.token);
+      refreshStore.set(s.refreshToken ?? null);
+      return true;
+    })
+    .catch(() => false)
+    .finally(() => {
+      refreshing = null;
+    });
+  return refreshing;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -45,14 +89,17 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
   const token = tokenStore.get();
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json');
   const res = await fetch(`/api${path}`, { ...init, headers });
   if (res.status === 401 && token) {
+    // The access token is short-lived: try to swap the refresh token for a new pair, then retry once.
+    if (!retried && (await refreshSession())) return request<T>(path, init, true);
     tokenStore.set(null);
+    refreshStore.set(null);
     window.dispatchEvent(new Event('vo:logout'));
   }
   const text = await res.text();

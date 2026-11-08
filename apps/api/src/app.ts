@@ -8,7 +8,7 @@ import {
   actionParamSchema,
   ocrMetaSchema,
   otpRequestSchema,
-  otpVerifySchema,
+  otpVerifySchema, refreshSchema,
   staffLoginSchema,
   vendorDraftSchema,
   type UserDTO,
@@ -101,7 +101,7 @@ export async function buildApp(deps: AppDeps) {
   });
 
   // ── auth ──
-  const PUBLIC = new Set(['/api/health', '/api/auth/login', '/api/auth/code', '/api/auth/code/verify']);
+  const PUBLIC = new Set(['/api/health', '/api/auth/login', '/api/auth/code', '/api/auth/code/verify', '/api/auth/refresh', '/api/auth/logout']);
   app.addHook('onRequest', async (req: FastifyRequest) => {
     const path = req.url.split('?')[0]!;
     if (!path.startsWith('/api/') || PUBLIC.has(path)) return;
@@ -131,6 +131,15 @@ export async function buildApp(deps: AppDeps) {
   app.post('/api/auth/code/verify', { schema: { tags: authTags, body: otpVerifySchema } }, async (req) => {
     limit(`verify:${req.ip}`);
     return auth.verifyCode(authDeps, req.body.email, req.body.code);
+  });
+
+  app.post('/api/auth/refresh', { schema: { tags: authTags, body: refreshSchema } }, async (req) => {
+    limit(`refresh:${req.ip}`);
+    return auth.refresh(authDeps, req.body.refreshToken);
+  });
+  app.post('/api/auth/logout', { schema: { tags: authTags, body: refreshSchema } }, async (req) => {
+    await auth.logout(authDeps, req.body.refreshToken);
+    return { ok: true };
   });
 
   app.get('/api/me', { schema: { tags: authTags } }, async (req) => auth.session(authDeps, req.user));

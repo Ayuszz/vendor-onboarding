@@ -39,10 +39,11 @@ npm run dev                 # API on :4000, web on :5173
 
 Open <http://localhost:5173>. There is one sign-in page with two tabs:
 
-- **Vendor:** enter an email and a 6-digit code is emailed to it. The code is **only** delivered by email: the API never returns it, and the database stores only an HMAC of it. The vendor types the code from their inbox, the server checks it, and then signs them in. A new email goes straight to company registration and document upload. If a vendor record with that contact email already exists, it is linked to the account and the vendor sees its status.
+- **Vendor:** enter an email and a fresh 6-digit code is emailed to it (a new code every time, valid for 10 minutes, one use, 5 wrong tries). The code is **only** delivered by email: the API never returns it, and the database stores only an HMAC of it. The vendor types the code from their inbox, the server checks it, and then signs them in. A new email goes straight to company registration and document upload. If a vendor record with that contact email already exists, it is linked to the account and the vendor sees its status.
+  - **Tokens:** a correct code gives an access token (15 minutes) and a refresh token (30 days). The refresh token is stored only as a SHA-256 hash in the `refresh_tokens` table. Each refresh returns a new pair and retires the old refresh token. Using an old one again revokes the whole chain, and a new sign-in retires every earlier token for that user. The web app refreshes quietly when the access token expires.
+  - Set `MAILER=smtp` and the `SMTP_*` settings in `.env` to send real emails. Copy `.env.example` to `.env` first, and never commit `.env`.
   - With `MAILER=console` (the local default) no email is sent, and the email is printed to the **API terminal**, not the browser.
-  - To send real emails, set `MAILER=smtp` and the `SMTP_*` settings in `.env`.
-  - For quick local testing you can set `DEV_SHOW_OTP=true` to also show the code in the browser. The app refuses to start with that setting in production.
+  - For quick local testing you can set `DEV_SHOW_OTP=true` to also show the code in the browser. It only works when `HOST` is 127.0.0.1 or localhost, and the app refuses to start with it in production.
  The database is an embedded Postgres (PGlite) stored in `.data/`, so nothing else needs installing. API docs are at <http://localhost:4000/docs>.
 
 ```bash

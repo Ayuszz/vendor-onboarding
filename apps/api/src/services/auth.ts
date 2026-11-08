@@ -1,4 +1,4 @@
-import { createHmac, randomInt, randomUUID, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomInt, randomUUID, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { OtpRequestResult, Role, SessionDTO, UserDTO } from '@vo/shared';
 import { signToken } from '../auth.js';
@@ -56,12 +56,64 @@ function toUser(r: UserRow): UserDTO {
   return { id: r.id, name: r.name, email: r.email, roles: r.roles };
 }
 
+const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
+
+/** Creates a refresh token. Only its SHA-256 is stored, so a database leak cannot be replayed. */
+async function issueRefreshToken(q: Queryable, deps: AuthDeps, userId: string): Promise<string> {
+  const token = randomBytes(32).toString('base64url');
+  await q.query(
+    `INSERT INTO refresh_tokens (token_hash, user_id, expires_at) VALUES ($1, $2, now() + ($3 || ' seconds')::interval)`,
+    [sha256(token), userId, String(deps.cfg.REFRESH_TTL_SECONDS)],
+  );
+  return token;
+}
+
 export async function session(deps: AuthDeps, user: UserDTO, withToken = false): Promise<SessionDTO> {
+  if (!withToken) return { user, vendorId: await vendorIdFor(deps.db, user) };
+  // A fresh sign-in starts a new token chain: every older refresh token for this user stops working.
+  await deps.db.query('UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [user.id]);
   return {
-    ...(withToken ? { token: signToken(user, deps.cfg.JWT_SECRET, deps.cfg.JWT_TTL_SECONDS) } : {}),
+    token: signToken(user, deps.cfg.JWT_SECRET, deps.cfg.JWT_TTL_SECONDS),
+    refreshToken: await issueRefreshToken(deps.db, deps, user.id),
     user,
     vendorId: await vendorIdFor(deps.db, user),
   };
+}
+
+/**
+ * Swaps a refresh token for a new access token and a new refresh token (rotation).
+ * Presenting a token that was already used means it may have been stolen, so the whole chain is revoked.
+ */
+export async function refresh(deps: AuthDeps, refreshToken: string): Promise<SessionDTO> {
+  const hash = sha256(refreshToken);
+  const userId = await deps.db.transaction(async (tx) => {
+    const { rows } = await tx.query<{ user_id: string; revoked: boolean; expired: boolean }>(
+      `SELECT user_id, revoked_at IS NOT NULL AS revoked, expires_at < now() AS expired FROM refresh_tokens WHERE token_hash = $1 FOR UPDATE`,
+      [hash],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    if (row.revoked) {
+      await tx.query('UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [row.user_id]);
+      return null;
+    }
+    await tx.query('UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1', [hash]);
+    return row.expired ? null : row.user_id;
+  });
+  if (!userId) throw unauthorized('Your session has ended. Please sign in again.');
+  const { rows } = await deps.db.query<UserRow>(`SELECT id, name, email, roles, kind, password_hash FROM users WHERE id = $1`, [userId]);
+  if (!rows[0]) throw unauthorized('Your session has ended. Please sign in again.');
+  const user = toUser(rows[0]);
+  return {
+    token: signToken(user, deps.cfg.JWT_SECRET, deps.cfg.JWT_TTL_SECONDS),
+    refreshToken: await issueRefreshToken(deps.db, deps, user.id),
+    user,
+    vendorId: await vendorIdFor(deps.db, user),
+  };
+}
+
+export async function logout(deps: AuthDeps, refreshToken: string): Promise<void> {
+  await deps.db.query('UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL', [sha256(refreshToken)]);
 }
 
 /** Staff (QC, SCM, Finance, buyers, admins) sign in with email and password. */

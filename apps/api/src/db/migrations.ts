@@ -134,6 +134,20 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE vendor_documents ADD COLUMN ocr jsonb;
     `,
   },
+  {
+    id: 4,
+    name: 'refresh_tokens',
+    sql: /* sql */ `
+      CREATE TABLE refresh_tokens (
+        token_hash  text PRIMARY KEY,
+        user_id     text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at  timestamptz NOT NULL,
+        created_at  timestamptz NOT NULL DEFAULT now(),
+        revoked_at  timestamptz
+      );
+      CREATE INDEX refresh_tokens_user_idx ON refresh_tokens(user_id);
+    `,
+  },
 ];
 
 export async function migrate(db: Db): Promise<number[]> {

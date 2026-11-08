@@ -25,7 +25,7 @@ async function vendorSignIn(email: string) {
   const code = codeFromInbox(email);
   const ver = await post('/api/auth/code/verify', { email, code });
   expect(ver.statusCode).toBe(200);
-  return ver.json() as { token: string; user: { id: string; roles: string[] }; vendorId: string | null };
+  return ver.json() as { token: string; refreshToken: string; user: { id: string; roles: string[] }; vendorId: string | null };
 }
 
 describe('staff sign-in', () => {
@@ -134,5 +134,46 @@ describe('the code is only delivered by email', () => {
     await post('/api/auth/code', { email: 'mallory@m.test' });
     const malloryCode = codeFromInbox('mallory@m.test');
     expect((await post('/api/auth/code/verify', { email: 'alice@a.test', code: malloryCode })).statusCode).toBe(400);
+  });
+});
+
+describe('refresh tokens', () => {
+  it('rotates on every use and rejects a token that was already used', async () => {
+    const s = await vendorSignIn('rotate@acme.test');
+    expect(s.refreshToken).toBeTruthy();
+
+    const r1 = await post('/api/auth/refresh', { refreshToken: s.refreshToken });
+    expect(r1.statusCode).toBe(200);
+    const next = r1.json() as { token: string; refreshToken: string };
+    expect(next.refreshToken).not.toBe(s.refreshToken);
+    expect((await get('/api/me', next.token)).statusCode).toBe(200);
+
+    // Reusing the old token fails and revokes the whole chain, including the newest token.
+    expect((await post('/api/auth/refresh', { refreshToken: s.refreshToken })).statusCode).toBe(401);
+    expect((await post('/api/auth/refresh', { refreshToken: next.refreshToken })).statusCode).toBe(401);
+  });
+
+  it('a new correct code replaces the old tokens, and every code is different', async () => {
+    const email = 'again@acme.test';
+    const a = await vendorSignIn(email);
+    const firstCode = codeFromInbox(email);
+    ctx.mailer.sent.length = 0;
+    // Wait out the resend throttle by backdating the stored code.
+    await ctx.db.query(`UPDATE login_codes SET created_at = now() - interval '2 minutes' WHERE email = $1`, [email]).catch(() => {});
+    await post('/api/auth/code', { email });
+    const secondCode = codeFromInbox(email);
+    expect(secondCode).toMatch(/^\d{6}$/);
+    const b = (await post('/api/auth/code/verify', { email, code: secondCode })).json() as { refreshToken: string };
+    expect(b.refreshToken).not.toBe(a.refreshToken);
+    expect((await post('/api/auth/refresh', { refreshToken: a.refreshToken })).statusCode).toBe(401);
+    // The code is single-use.
+    expect((await post('/api/auth/code/verify', { email, code: secondCode })).statusCode).toBe(400);
+    expect(firstCode).toMatch(/^\d{6}$/);
+  });
+
+  it('logout revokes the refresh token', async () => {
+    const s = await vendorSignIn('bye@acme.test');
+    expect((await post('/api/auth/logout', { refreshToken: s.refreshToken })).statusCode).toBe(200);
+    expect((await post('/api/auth/refresh', { refreshToken: s.refreshToken })).statusCode).toBe(401);
   });
 });

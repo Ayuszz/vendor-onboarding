@@ -1,7 +1,7 @@
 import type { SessionDTO, UserDTO } from '@vo/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, tokenStore } from './api';
+import { api, IS_DEMO, refreshStore, tokenStore } from './api';
 
 interface AuthState {
   user: UserDTO | null;
@@ -24,7 +24,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const me = useQuery({ queryKey: ['me'], queryFn: api.me, enabled: hasToken, retry: false, staleTime: Infinity });
 
   const logout = useCallback(() => {
+    const rt = refreshStore.get();
+    if (rt && !IS_DEMO) void fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken: rt }) }).catch(() => {});
     tokenStore.set(null);
+    refreshStore.set(null);
     setHasToken(false);
     qc.clear();
   }, [qc]);
@@ -42,6 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (s: SessionDTO) => {
       if (!s.token) return;
       tokenStore.set(s.token);
+      refreshStore.set(s.refreshToken ?? null);
       qc.clear();
       qc.setQueryData(['me'], { user: s.user, vendorId: s.vendorId });
       setHasToken(true);

@@ -21,7 +21,8 @@ const envSchema = z.object({
 
   AUTH_MODE: z.enum(['dev', 'jwt']).default('dev'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
-  JWT_TTL_SECONDS: z.coerce.number().int().positive().default(8 * 3600),
+  JWT_TTL_SECONDS: z.coerce.number().int().positive().default(15 * 60),
+  REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(30 * 24 * 3600),
 
   /**
    * How vendor sign-in codes are delivered.

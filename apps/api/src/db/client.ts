@@ -1,4 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import pg from 'pg';
 
 /**
@@ -24,6 +26,8 @@ export async function createDb(opts: { databaseUrl?: string; pgliteDir?: string 
 }
 
 async function createPgliteDb(dir: string): Promise<Db> {
+  // A fresh checkout has no .data folder yet; create the parent so the first start just works.
+  if (!dir.startsWith('memory://')) mkdirSync(dirname(dir), { recursive: true });
   const client = new PGlite(dir);
   await client.waitReady;
   // PGlite is single-connection; serialize transactions so they never interleave.
